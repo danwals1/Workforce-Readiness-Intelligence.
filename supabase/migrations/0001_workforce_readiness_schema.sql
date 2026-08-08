@@ -55,8 +55,11 @@ begin
 end;
 $$;
 
-create or replace function wri_sync_client_from_parent(parent_table text, parent_id_col text)
+create or replace function wri_sync_client_from_parent()
 returns trigger language plpgsql as $$
+declare
+  parent_table text := TG_ARGV[0];
+  parent_id_col text := TG_ARGV[1];
 begin
   execute format('select client_id from %I where id = $1', parent_table)
     into strict new.client_id using (row_to_json(new)->>parent_id_col)::uuid;
