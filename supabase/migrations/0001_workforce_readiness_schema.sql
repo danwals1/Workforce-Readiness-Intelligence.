@@ -1,18 +1,32 @@
 -- ============================================================================
 -- Workforce Readiness Intelligence — Assessments feature schema (additive)
--- REVISION 3 — supersedes revisions 1 and 2 before any of them have run.
--- ============================================================================
--- Preserves, unchanged: employees, user_client_roles, role_readiness, all
--- existing auth/RLS, and every existing app file.
+-- REVISION 4 — supersedes revisions 1–3. Written after inspecting the live
+-- database, which already has tables not visible in the GitHub repo:
+--   roles, competencies, competency_evidence, employee_role_assignments,
+--   learning_modules, role_readiness, employees, clients, user_client_roles
+-- This revision REUSES those tables everywhere the earlier drafts invented
+-- job_roles / competencies / competency_evidence / employee_role_assignments.
+-- It does not create, drop, rename, or restructure any of them. The ONE
+-- exception is a single additive column on competency_evidence (Part D).
 --
--- ASSUMPTIONS: see revision 1 (public.clients(id) exists; gen_random_uuid()
--- available). RLS helper functions are prefixed wri_ to avoid any collision
--- with objects you already have.
+-- ASSUMPTIONS: public.clients(id) exists; gen_random_uuid() available.
+-- employee_role_assignments is NOT modified anywhere in this file — it is
+-- actual/current-role history (is_primary, status, effective dates) per
+-- the schema provided. Target/future role tracking lives instead in a new
+-- additive table, employee_target_roles (Part A).
+--
+-- learning_modules (client-scoped internal content, part of the existing
+-- learning-path system: learning_path_id, sequence, prerequisite_module_id,
+-- verify_method, etc.) is preserved completely and never duplicated.
+-- training_opportunities.learning_module_id bridges to it for internal
+-- content only; a trigger derives/validates that the bridging row's
+-- client_id always matches the learning_module's client_id, so a training
+-- opportunity can never be wired to another company's module.
 -- ============================================================================
 
 
 -- ----------------------------------------------------------------------------
--- 0. Shared helper functions
+-- 0. Shared helper functions (unchanged from revision 3)
 -- ----------------------------------------------------------------------------
 create or replace function wri_is_integrateu_admin()
 returns boolean language sql stable security definer set search_path = public
@@ -50,8 +64,6 @@ begin
 end;
 $$;
 
--- new: give a fresh versioned template row its own family_id when one
--- isn't supplied (i.e. it's starting a brand new family, not a republish)
 create or replace function wri_default_family_id()
 returns trigger language plpgsql as $$
 begin
@@ -60,20 +72,35 @@ begin
 end;
 $$;
 
+-- Enforces that a training_opportunity wrapping an internal learning_module
+-- can never point at another company's module: derives/validates client_id
+-- from the learning_module itself rather than trusting whatever the caller
+-- passed in. learning_modules.client_id is NOT NULL, so any row that
+-- bridges to one is necessarily company-scoped too.
+create or replace function wri_sync_client_from_learning_module()
+returns trigger language plpgsql as $$
+declare
+  v_lm_client uuid;
+begin
+  if new.learning_module_id is not null then
+    select client_id into strict v_lm_client from learning_modules where id = new.learning_module_id;
+    if new.client_id is not null and new.client_id <> v_lm_client then
+      raise exception 'training_opportunity.client_id (%) does not match its learning_module''s client_id (%)',
+        new.client_id, v_lm_client;
+    end if;
+    new.client_id := v_lm_client;
+  end if;
+  return new;
+end;
+$$;
+
 
 -- ============================================================================
--- PART A — Master Library versioning (industries / job_roles / competencies /
---          assessments / assessment_questions / template adoption)
+-- PART A — IntegrateU Master Library (all NEW tables; roles/competencies
+--          are never modified — adopting a template copies its fields into
+--          a new roles/competencies row instead of sharing one)
 -- ============================================================================
 
--- ----------------------------------------------------------------------------
--- 1. industries — DECISION: IntegrateU-controlled global catalog only.
---    (Revision 1's comment implying nullable client_id here was wrong — the
---    table never had a client_id column. Documenting the decision instead
---    of adding one: industries are a fixed product taxonomy IntegrateU
---    curates. If a company ever needs a custom industry, that is a
---    deliberate future feature, not an accidental side door.)
--- ----------------------------------------------------------------------------
 create table industries (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -85,127 +112,150 @@ create table industries (
 );
 create trigger trg_industries_updated_at before update on industries
   for each row execute function wri_set_updated_at();
-
 alter table industries enable row level security;
 create policy industries_select on industries for select using (true);
 create policy industries_write_admin on industries for all
   using (wri_is_integrateu_admin()) with check (wri_is_integrateu_admin());
 
 
--- ----------------------------------------------------------------------------
--- 2. job_roles — now versioned.
---    family_id is stable across republishes; (id, version) is the
---    physical row. A "publish v2" operation INSERTs a new row with the
---    same family_id and version+1, then flips the OLD row's is_current to
---    false and sets superseded_by — the old row's substantive columns
---    (name, description, level_scale_max) are never edited in place, so
---    any company still pointing at it by id sees no change.
--- ----------------------------------------------------------------------------
-create table job_roles (
+-- Versioned template of a role. Mirrors the authorable fields on the real
+-- `roles` table (name/department/purpose/description) plus publishing
+-- metadata. Adopting one INSERTs a new row into `roles` — this table is
+-- never referenced by employee_role_assignments or anything operational.
+create table master_role_templates (
   id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id), -- null = IntegrateU template, set = company's own
-  family_id uuid,                        -- stable identity across versions; defaults to id
+  family_id uuid,
   version int not null default 1,
   is_current boolean not null default true,
-  superseded_by uuid references job_roles(id),
+  superseded_by uuid references master_role_templates(id),
   published_at timestamptz not null default now(),
   published_by uuid,
   industry_id uuid not null references industries(id),
   name text not null,
+  department text,
+  purpose text,
   description text,
   level_scale_max int not null default 5,
+  status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create trigger trg_job_roles_family before insert on job_roles
+create trigger trg_mrt_family before insert on master_role_templates
   for each row execute function wri_default_family_id();
-create trigger trg_job_roles_updated_at before update on job_roles
+create trigger trg_mrt_updated_at before update on master_role_templates
   for each row execute function wri_set_updated_at();
-
-create unique index uq_job_roles_family_version on job_roles (family_id, version);
-create index ix_job_roles_client on job_roles (client_id);
-create index ix_job_roles_industry on job_roles (industry_id);
-create index ix_job_roles_current on job_roles (family_id) where is_current;
-
-alter table job_roles enable row level security;
-create policy job_roles_select on job_roles for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy job_roles_write on job_roles for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+create unique index uq_mrt_family_version on master_role_templates (family_id, version);
+create index ix_mrt_industry on master_role_templates (industry_id);
+create index ix_mrt_current on master_role_templates (family_id) where is_current;
+alter table master_role_templates enable row level security;
+create policy mrt_select on master_role_templates for select using (true);
+create policy mrt_write_admin on master_role_templates for all
+  using (wri_is_integrateu_admin()) with check (wri_is_integrateu_admin());
 
 
--- ----------------------------------------------------------------------------
--- 3. competencies — same versioning shape as job_roles.
--- ----------------------------------------------------------------------------
-create table competencies (
+-- Versioned template of a competency. Mirrors the real `competencies`
+-- table's authorable fields (category, critical, verifier_type,
+-- evidence_requirements, reverification_period). Adopting one INSERTs a
+-- new row into `competencies`.
+create table master_competency_templates (
   id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id),
   family_id uuid,
   version int not null default 1,
   is_current boolean not null default true,
-  superseded_by uuid references competencies(id),
+  superseded_by uuid references master_competency_templates(id),
   published_at timestamptz not null default now(),
   published_by uuid,
   industry_id uuid not null references industries(id),
   name text not null,
   category text,
+  is_critical boolean not null default false,
+  verifier_type text,
+  evidence_requirements text,
+  reverification_period_months int,
   description text,
+  status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create trigger trg_competencies_family before insert on competencies
+create trigger trg_mct_family before insert on master_competency_templates
   for each row execute function wri_default_family_id();
-create trigger trg_competencies_updated_at before update on competencies
+create trigger trg_mct_updated_at before update on master_competency_templates
   for each row execute function wri_set_updated_at();
-
-create unique index uq_competencies_family_version on competencies (family_id, version);
-create index ix_competencies_client on competencies (client_id);
-create index ix_competencies_industry on competencies (industry_id);
-create index ix_competencies_current on competencies (family_id) where is_current;
-
-alter table competencies enable row level security;
-create policy competencies_select on competencies for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy competencies_write on competencies for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+create unique index uq_mct_family_version on master_competency_templates (family_id, version);
+create index ix_mct_industry on master_competency_templates (industry_id);
+create index ix_mct_current on master_competency_templates (family_id) where is_current;
+alter table master_competency_templates enable row level security;
+create policy mct_select on master_competency_templates for select using (true);
+create policy mct_write_admin on master_competency_templates for all
+  using (wri_is_integrateu_admin()) with check (wri_is_integrateu_admin());
 
 
--- ----------------------------------------------------------------------------
--- 4. role_competency_requirements — scoped to one exact job_role version
---    (a republish gets its own fresh set of requirement rows under the new
---    job_role_id — no separate versioning columns needed here).
--- ----------------------------------------------------------------------------
-create table role_competency_requirements (
+-- Template-side required-level matrix — the master equivalent of
+-- role_competency_requirements (Part B), scoped to specific template
+-- versions rather than to a company's adopted roles/competencies.
+create table master_role_competency_requirements (
   id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id),
-  job_role_id uuid not null references job_roles(id) on delete cascade,
-  competency_id uuid not null references competencies(id) on delete cascade,
+  master_role_template_id uuid not null references master_role_templates(id) on delete cascade,
+  master_competency_template_id uuid not null references master_competency_templates(id) on delete cascade,
   required_level int not null check (required_level between 1 and 5),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (job_role_id, competency_id)
+  unique (master_role_template_id, master_competency_template_id)
 );
-create trigger trg_rcr_sync_client before insert or update on role_competency_requirements
-  for each row execute function wri_sync_client_from_parent('job_roles', 'job_role_id');
-create trigger trg_rcr_updated_at before update on role_competency_requirements
+create trigger trg_mrcr_updated_at before update on master_role_competency_requirements
   for each row execute function wri_set_updated_at();
-
-create index ix_rcr_client on role_competency_requirements (client_id);
-create index ix_rcr_competency on role_competency_requirements (competency_id);
-
-alter table role_competency_requirements enable row level security;
-create policy rcr_select on role_competency_requirements for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy rcr_write on role_competency_requirements for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+create index ix_mrcr_competency on master_role_competency_requirements (master_competency_template_id);
+alter table master_role_competency_requirements enable row level security;
+create policy mrcr_select on master_role_competency_requirements for select using (true);
+create policy mrcr_write_admin on master_role_competency_requirements for all
+  using (wri_is_integrateu_admin()) with check (wri_is_integrateu_admin());
 
 
--- ----------------------------------------------------------------------------
--- 5. assessments — versioned like job_roles/competencies.
--- ----------------------------------------------------------------------------
+-- A company's record of which template (and version) it adopted, for each
+-- of the three adoptable entity types. source_template_id/adopted_row_id
+-- are loose (polymorphic) references — application-enforced, since a
+-- single FK can't target three different tables.
+create table template_adoptions (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references clients(id),
+  entity_type text not null check (entity_type in ('role', 'competency', 'assessment')),
+  source_template_id uuid not null,   -- master_role_templates.id / master_competency_templates.id / assessments.id (global row)
+  source_family_id uuid not null,
+  source_version int not null,
+  adopted_row_id uuid not null,       -- roles.id / competencies.id / assessments.id (the company's own copy)
+  adopted_at timestamptz not null default now(),
+  adopted_by uuid,
+  created_at timestamptz not null default now()
+);
+create index ix_adoptions_client on template_adoptions (client_id);
+create index ix_adoptions_family on template_adoptions (source_family_id, source_version);
+alter table template_adoptions enable row level security;
+create policy adoptions_all on template_adoptions for all
+  using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
+  with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+
+create or replace view v_template_adoption_status as
+select
+  ta.*,
+  case ta.entity_type
+    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current)
+    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current)
+    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current)
+  end as current_published_version,
+  case ta.entity_type
+    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current) > ta.source_version
+    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current) > ta.source_version
+    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current) > ta.source_version
+  end as newer_version_available
+from template_adoptions ta;
+
+
+-- ============================================================================
+-- PART B — Assessments (dual-mode: a template row, client_id null,
+--          references the master_* tables; a company row, client_id set,
+--          references the EXISTING roles/competencies tables directly)
+-- ============================================================================
+
 create table assessments (
   id uuid primary key default gen_random_uuid(),
   client_id uuid references clients(id),
@@ -218,22 +268,34 @@ create table assessments (
   industry_id uuid not null references industries(id),
   name text not null,
   type text not null check (type in ('initial', 'competency', 'role_qualification')),
-  job_role_id uuid references job_roles(id),
-  target_job_role_id uuid references job_roles(id),
+
+  -- template mode (client_id is null) — reference the master library
+  master_role_template_id uuid references master_role_templates(id),
+  master_target_role_template_id uuid references master_role_templates(id),
+  master_competency_template_id uuid references master_competency_templates(id),
+
+  -- company mode (client_id is not null) — reference the real, existing tables
+  role_id uuid references roles(id),
+  target_role_id uuid references roles(id),
   competency_id uuid references competencies(id),
+
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+
+  check (
+    (client_id is null  and role_id is null and target_role_id is null and competency_id is null)
+    or
+    (client_id is not null and master_role_template_id is null and master_target_role_template_id is null and master_competency_template_id is null)
+  )
 );
 create trigger trg_assessments_family before insert on assessments
   for each row execute function wri_default_family_id();
 create trigger trg_assessments_updated_at before update on assessments
   for each row execute function wri_set_updated_at();
-
 create unique index uq_assessments_family_version on assessments (family_id, version);
 create index ix_assessments_client on assessments (client_id);
-create index ix_assessments_role on assessments (job_role_id);
+create index ix_assessments_role on assessments (role_id);
 create index ix_assessments_current on assessments (family_id) where is_current;
-
 alter table assessments enable row level security;
 create policy assessments_select on assessments for select
   using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
@@ -242,37 +304,38 @@ create policy assessments_write on assessments for all
   with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
 
 
--- ----------------------------------------------------------------------------
--- 6. assessment_questions — PUBLIC-SAFE content only. correct_answer has
---    been split out into assessment_question_answer_keys (Part C) so a
---    permissive select policy here can never leak answers.
--- ----------------------------------------------------------------------------
+-- Public-safe question content only — correct_answer lives in
+-- assessment_question_answer_keys (Part C), never here.
 create table assessment_questions (
   id uuid primary key default gen_random_uuid(),
   client_id uuid references clients(id),
   assessment_id uuid not null references assessments(id) on delete cascade,
-  competency_id uuid not null references competencies(id),
+
+  master_competency_template_id uuid references master_competency_templates(id), -- set when the parent assessment is template-mode
+  competency_id uuid references competencies(id),                                -- set when the parent assessment is company-mode
+
   type text not null check (type in
     ('multiple_choice', 'multiple_select', 'scenario', 'image_based',
      'troubleshooting', 'situational_judgment')),
   prompt text not null,
   scenario text,
   image_url text,
-  options jsonb, -- [{ "id": "a", "label": "..." }, ...] — no correctness info
+  options jsonb,
   points numeric not null default 1,
   sort_order int not null default 0,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+
+  check (master_competency_template_id is not null or competency_id is not null),
+  check (not (master_competency_template_id is not null and competency_id is not null))
 );
 create trigger trg_aq_sync_client before insert or update on assessment_questions
   for each row execute function wri_sync_client_from_parent('assessments', 'assessment_id');
 create trigger trg_aq_updated_at before update on assessment_questions
   for each row execute function wri_set_updated_at();
-
 create index ix_aq_client on assessment_questions (client_id);
 create index ix_aq_assessment on assessment_questions (assessment_id);
 create index ix_aq_competency on assessment_questions (competency_id);
-
 alter table assessment_questions enable row level security;
 create policy aq_select on assessment_questions for select
   using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
@@ -280,64 +343,42 @@ create policy aq_write on assessment_questions for all
   using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
   with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
 
--- This SELECT policy is intentionally readable by any assessment-taking
--- employee (they need prompts/options to take the test) — that's exactly
--- why correct_answer must never live in this table.
 
-
--- ----------------------------------------------------------------------------
--- 7. template_adoptions — a company's record of which IntegrateU template
---    (and which version of it) it copied, so "newer version available"
---    can be answered without ever mutating what they adopted.
--- ----------------------------------------------------------------------------
-create table template_adoptions (
+-- Company-side required-level matrix. Genuinely new — `competencies`
+-- carries attributes of the competency itself, not a per-role required
+-- level, and `roles` has no requirement linkage either.
+create table role_competency_requirements (
   id uuid primary key default gen_random_uuid(),
-  client_id uuid not null references clients(id),
-  entity_type text not null check (entity_type in ('job_role', 'competency', 'assessment')),
-  source_template_id uuid not null,  -- the global row's id at adoption time (loose ref; polymorphic across 3 tables)
-  source_family_id uuid not null,
-  source_version int not null,
-  adopted_row_id uuid not null,      -- the company's own copy's id, in the same table as entity_type
-  adopted_at timestamptz not null default now(),
-  adopted_by uuid,
-  created_at timestamptz not null default now()
+  client_id uuid references clients(id),
+  role_id uuid not null references roles(id) on delete cascade,
+  competency_id uuid not null references competencies(id) on delete cascade,
+  required_level int not null check (required_level between 1 and 5),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (role_id, competency_id)
 );
-create index ix_adoptions_client on template_adoptions (client_id);
-create index ix_adoptions_family on template_adoptions (source_family_id, source_version);
-
-alter table template_adoptions enable row level security;
-create policy adoptions_all on template_adoptions for all
+create trigger trg_rcr_sync_client before insert or update on role_competency_requirements
+  for each row execute function wri_sync_client_from_parent('roles', 'role_id');
+create trigger trg_rcr_updated_at before update on role_competency_requirements
+  for each row execute function wri_set_updated_at();
+create index ix_rcr_client on role_competency_requirements (client_id);
+create index ix_rcr_competency on role_competency_requirements (competency_id);
+alter table role_competency_requirements enable row level security;
+create policy rcr_all on role_competency_requirements for all
   using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
--- Convenience view: is a newer published version of what this company
--- adopted now available? Computed on read, never stored, so it can't go stale.
-create or replace view v_template_adoption_status as
-select
-  ta.*,
-  case ta.entity_type
-    when 'job_role'    then (select max(version) from job_roles where family_id = ta.source_family_id and is_current)
-    when 'competency'  then (select max(version) from competencies where family_id = ta.source_family_id and is_current)
-    when 'assessment'  then (select max(version) from assessments where family_id = ta.source_family_id and is_current)
-  end as current_published_version,
-  case ta.entity_type
-    when 'job_role'    then (select max(version) from job_roles where family_id = ta.source_family_id and is_current) > ta.source_version
-    when 'competency'  then (select max(version) from competencies where family_id = ta.source_family_id and is_current) > ta.source_version
-    when 'assessment'  then (select max(version) from assessments where family_id = ta.source_family_id and is_current) > ta.source_version
-  end as newer_version_available
-from template_adoptions ta;
-
 
 -- ============================================================================
--- PART B — Company-specific assessment activity (unchanged from revision 1)
+-- PART C — Attempts, secure scoring, competency scores
 -- ============================================================================
 
 create table assessment_attempts (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
   employee_id uuid not null references employees(id) on delete cascade,
-  assessment_id uuid not null references assessments(id),
-  job_role_id uuid references job_roles(id),
+  assessment_id uuid not null references assessments(id), -- must be a company-mode (client_id not null) assessment
+  role_id uuid references roles(id),
   status text not null default 'not_started'
     check (status in ('not_started', 'in_progress', 'completed', 'abandoned')),
   started_at timestamptz,
@@ -365,7 +406,7 @@ create table attempt_answers (
   attempt_id uuid not null references assessment_attempts(id) on delete cascade,
   question_id uuid not null references assessment_questions(id),
   response jsonb not null,
-  is_correct boolean, -- filled in server-side only, see wri_score_attempt() in Part C
+  is_correct boolean, -- server-side only, see wri_score_attempt() below
   answered_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   unique (attempt_id, question_id)
@@ -414,20 +455,13 @@ create policy scores_all on competency_scores for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
--- ============================================================================
--- PART C — Secure scoring (answer keys never reach the browser)
--- ============================================================================
-
--- Correct answers live ONLY here. No policy below grants select to the
--- authenticated role used by the browser client — RLS is enabled with zero
--- permissive read policies for ordinary users, so the default is deny.
--- Only wri_is_integrateu_admin()/CLIENT_ADMIN authoring policies exist, for
--- managing question content — never for taking a test.
+-- Correct answers live ONLY here. No SELECT policy grants ordinary users
+-- read access — default deny. Only content-authoring admins may write.
 create table assessment_question_answer_keys (
   id uuid primary key default gen_random_uuid(),
   client_id uuid,
   question_id uuid not null unique references assessment_questions(id) on delete cascade,
-  correct_answer jsonb not null, -- e.g. "a" or ["a","c"]
+  correct_answer jsonb not null,
   scoring_notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -436,24 +470,18 @@ create trigger trg_akeys_sync_client before insert or update on assessment_quest
   for each row execute function wri_sync_client_from_parent('assessment_questions', 'question_id');
 create trigger trg_akeys_updated_at before update on assessment_question_answer_keys
   for each row execute function wri_set_updated_at();
-
 create index ix_akeys_client on assessment_question_answer_keys (client_id);
-
 alter table assessment_question_answer_keys enable row level security;
--- Authoring only (writing/managing the key) — still no SELECT policy for
--- plain employees; admins/client admins can manage content they own.
 create policy akeys_admin_all on assessment_question_answer_keys for all
   using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
   with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
 revoke all on assessment_question_answer_keys from authenticated, anon;
 grant select, insert, update, delete on assessment_question_answer_keys to authenticated; -- RLS above still gates every row
 
--- Server-side scoring: runs with definer rights so it can read answer keys
--- regardless of the calling user's RLS visibility, but it NEVER returns the
--- correct_answer values themselves — only writes is_correct + scores.
--- Call this from a trusted context only (a Supabase Edge Function using the
--- service role, or a Postgres RPC invoked after the employee submits the
--- whole attempt) — never let the browser call it mid-assessment per question.
+-- Server-side scoring only. SECURITY DEFINER, so the in-function
+-- authorization check below — not the grant, not the UI — is the real
+-- gate. Prefer invoking from a service-role Edge Function after verifying
+-- the caller's JWT server-side; this is the DB-level backstop regardless.
 create or replace function wri_score_attempt(p_attempt_id uuid)
 returns void
 language plpgsql
@@ -469,19 +497,7 @@ begin
     raise exception 'attempt % not found', p_attempt_id;
   end if;
 
-  -- REVISION 3 hardening: SECURITY DEFINER means this function can read
-  -- rows the caller's own RLS would hide, so the function itself — not
-  -- just the UI/RLS — must decide whether the caller may score THIS
-  -- attempt. Three allowed callers only:
-  --   1. an INTEGRATEU_ADMIN,
-  --   2. a CLIENT_ADMIN whose allowed clients include this attempt's client, or
-  --   3. the employee who owns the attempt (scoring their own submission).
-  -- Everyone else is rejected before any row is touched. Prefer invoking
-  -- this from a service-role Edge Function after the caller's JWT has
-  -- already been verified server-side; this check is the DB-level
-  -- backstop either way, not the only line of defense.
-  select auth_user_id into v_employee_auth_user_id
-  from employees where id = v_attempt.employee_id;
+  select auth_user_id into v_employee_auth_user_id from employees where id = v_attempt.employee_id;
 
   if not (
     wri_is_integrateu_admin()
@@ -491,15 +507,10 @@ begin
     raise exception 'not authorized to score attempt %', p_attempt_id;
   end if;
 
-  -- prevent replay: an attempt can only be scored once, from in_progress.
-  -- Blocks calling this repeatedly to re-derive/probe for answer content
-  -- via side channels (score deltas, timing, etc.) and blocks re-scoring
-  -- an attempt that was already finalized.
   if v_attempt.status = 'completed' then
     raise exception 'attempt % already scored', p_attempt_id;
   end if;
 
-  -- grade each answer against its (invisible-to-the-client) key
   update attempt_answers aa
   set is_correct = (
     select
@@ -514,21 +525,19 @@ begin
   )
   where aa.attempt_id = p_attempt_id;
 
-  -- roll answers up into a score per competency, snapshot the role's
-  -- required level, and upsert competency_scores
   insert into competency_scores (client_id, attempt_id, employee_id, competency_id, score_percent, estimated_level, required_level)
   select
     v_attempt.client_id,
     p_attempt_id,
     v_attempt.employee_id,
     q.competency_id,
-    round(100.0 * sum(case when aa.is_correct then q.points else 0 end) / sum(q.points), 1) as score_percent,
-    least(5, greatest(1, ceil(5.0 * sum(case when aa.is_correct then q.points else 0 end) / sum(q.points))::int)) as estimated_level,
+    round(100.0 * sum(case when aa.is_correct then q.points else 0 end) / sum(q.points), 1),
+    least(5, greatest(1, ceil(5.0 * sum(case when aa.is_correct then q.points else 0 end) / sum(q.points))::int)),
     rcr.required_level
   from attempt_answers aa
   join assessment_questions q on q.id = aa.question_id
   left join role_competency_requirements rcr
-    on rcr.job_role_id = v_attempt.job_role_id and rcr.competency_id = q.competency_id
+    on rcr.role_id = v_attempt.role_id and rcr.competency_id = q.competency_id
   where aa.attempt_id = p_attempt_id
   group by q.competency_id, rcr.required_level
   on conflict (attempt_id, competency_id) do update
@@ -540,146 +549,13 @@ begin
 end;
 $$;
 revoke all on function wri_score_attempt(uuid) from public, anon;
-grant execute on function wri_score_attempt(uuid) to authenticated; -- gate is the in-function check above, not this grant alone
+grant execute on function wri_score_attempt(uuid) to authenticated;
 
 
 -- ============================================================================
--- PART D1 — Reusable Training Library (catalog tables, created before
---           development_plan_items so it can reference training_opportunities)
--- ============================================================================
-
-create table vendors (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id), -- null = well-known manufacturer, shared across companies
-  name text not null,
-  website_url text,
-  notes text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create trigger trg_vendors_updated_at before update on vendors
-  for each row execute function wri_set_updated_at();
-create index ix_vendors_client on vendors (client_id);
-alter table vendors enable row level security;
-create policy vendors_select on vendors for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy vendors_write on vendors for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
-
-
-create table training_providers (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id), -- null = shared/global provider (e.g. a national trade school)
-  name text not null,
-  provider_type text not null check (provider_type in
-    ('integrateu_internal', 'company_internal', 'vendor_manufacturer', 'trade_school',
-     'community_college', 'online_platform', 'industry_association',
-     'certification_body', 'apprenticeship_sponsor')),
-  vendor_id uuid references vendors(id), -- set when provider_type = 'vendor_manufacturer'
-  website_url text,
-  description text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create trigger trg_providers_updated_at before update on training_providers
-  for each row execute function wri_set_updated_at();
-create index ix_providers_client on training_providers (client_id);
-create index ix_providers_vendor on training_providers (vendor_id);
-alter table training_providers enable row level security;
-create policy providers_select on training_providers for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy providers_write on training_providers for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
-
-
-create table training_opportunities (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid references clients(id), -- null = available to every company
-  provider_id uuid not null references training_providers(id),
-  name text not null,
-  description text,
-  source_type text not null check (source_type in
-    ('integrateu_internal', 'company_internal', 'vendor_manufacturer', 'trade_school',
-     'community_college', 'online_platform', 'industry_association',
-     'certification_body', 'apprenticeship_sponsor')),
-  delivery_format text not null check (delivery_format in
-    ('online', 'in_person', 'hybrid', 'self_paced', 'hands_on', 'blended')),
-  duration_label text,        -- e.g. "2 hrs", "3 supervised installs"
-  duration_minutes int,       -- structured form when known, for sorting/reporting
-  cost_amount numeric,
-  cost_currency text default 'USD',
-  is_certification boolean not null default false,
-  certification_name text,
-  certification_expires_after_months int,
-  url text,
-  verification_status text not null default 'unverified'
-    check (verification_status in ('unverified', 'verified', 'outdated')),
-  last_verified_at date,
-  discovered_by_ai boolean not null default false,
-  ai_model text,
-  integrateu_recommended boolean not null default false, -- distinct from source_type: an IntegrateU endorsement, even on a vendor/external course
-  location text, -- freeform city/region, or 'Online' / 'Nationwide'
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create trigger trg_opportunities_updated_at before update on training_opportunities
-  for each row execute function wri_set_updated_at();
-create index ix_opportunities_client on training_opportunities (client_id);
-create index ix_opportunities_provider on training_opportunities (provider_id);
-alter table training_opportunities enable row level security;
-create policy opportunities_select on training_opportunities for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy opportunities_write on training_opportunities for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
-
-
-create table training_competency_map (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid, -- synced from the training_opportunity
-  training_opportunity_id uuid not null references training_opportunities(id) on delete cascade,
-  competency_id uuid not null references competencies(id),
-  relevance_note text,
-  created_at timestamptz not null default now(),
-  unique (training_opportunity_id, competency_id)
-);
-create trigger trg_tcm_sync_client before insert or update on training_competency_map
-  for each row execute function wri_sync_client_from_parent('training_opportunities', 'training_opportunity_id');
-create index ix_tcm_competency on training_competency_map (competency_id);
-alter table training_competency_map enable row level security;
-create policy tcm_select on training_competency_map for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy tcm_write on training_competency_map for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
-
-
-create table training_role_map (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid,
-  training_opportunity_id uuid not null references training_opportunities(id) on delete cascade,
-  job_role_id uuid not null references job_roles(id),
-  relevance_note text,
-  created_at timestamptz not null default now(),
-  unique (training_opportunity_id, job_role_id)
-);
-create trigger trg_trm_sync_client before insert or update on training_role_map
-  for each row execute function wri_sync_client_from_parent('training_opportunities', 'training_opportunity_id');
-create index ix_trm_role on training_role_map (job_role_id);
-alter table training_role_map enable row level security;
-create policy trm_select on training_role_map for select
-  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-create policy trm_write on training_role_map for all
-  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
-  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
-
-
-
--- ============================================================================
--- PART D — Development plans, S²DE coaching, evidence, ratings, reports
---          (development_plan_items references training_opportunities, above)
+-- PART D — Development plans, S²DE coaching, evidence extension, ratings,
+--          reports. competency_evidence gets ONE additive column; every
+--          other existing table here is untouched.
 -- ============================================================================
 
 create table development_plans (
@@ -703,6 +579,165 @@ create policy plans_all on development_plans for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
+-- (training_opportunities is created in Part E, before this table, so the
+-- FK below is valid — see file order.)
+
+
+-- ============================================================================
+-- PART E — Reusable Training Library. Internal content stays authored in
+--          the existing `learning_modules` — training_opportunities wraps
+--          it with one thin row rather than duplicating it; external
+--          training (vendor/trade school/online/etc.) carries its own
+--          metadata directly.
+-- ============================================================================
+
+create table vendors (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid references clients(id),
+  name text not null,
+  website_url text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger trg_vendors_updated_at before update on vendors
+  for each row execute function wri_set_updated_at();
+create index ix_vendors_client on vendors (client_id);
+alter table vendors enable row level security;
+create policy vendors_select on vendors for select
+  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+create policy vendors_write on vendors for all
+  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
+  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+
+create table training_providers (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid references clients(id),
+  name text not null,
+  provider_type text not null check (provider_type in
+    ('integrateu_internal', 'company_internal', 'vendor_manufacturer', 'trade_school',
+     'community_college', 'online_platform', 'industry_association',
+     'certification_body', 'apprenticeship_sponsor')),
+  vendor_id uuid references vendors(id),
+  website_url text,
+  description text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger trg_providers_updated_at before update on training_providers
+  for each row execute function wri_set_updated_at();
+create index ix_providers_client on training_providers (client_id);
+create index ix_providers_vendor on training_providers (vendor_id);
+alter table training_providers enable row level security;
+create policy providers_select on training_providers for select
+  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+create policy providers_write on training_providers for all
+  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
+  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+
+create table training_opportunities (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid references clients(id),
+  provider_id uuid not null references training_providers(id),
+
+  learning_module_id uuid references learning_modules(id), -- bridge to existing internal content; see check below
+
+  name text not null,
+  description text,
+  source_type text not null check (source_type in
+    ('integrateu_internal', 'company_internal', 'vendor_manufacturer', 'trade_school',
+     'community_college', 'online_platform', 'industry_association',
+     'certification_body', 'apprenticeship_sponsor')),
+  delivery_format text not null check (delivery_format in
+    ('online', 'in_person', 'hybrid', 'self_paced', 'hands_on', 'blended')),
+  duration_label text,
+  duration_minutes int,
+  cost_amount numeric,
+  cost_currency text default 'USD',
+  is_certification boolean not null default false,
+  certification_name text,
+  certification_expires_after_months int,
+  url text,
+  verification_status text not null default 'unverified'
+    check (verification_status in ('unverified', 'verified', 'outdated')),
+  last_verified_at date,
+  discovered_by_ai boolean not null default false,
+  ai_model text,
+  integrateu_recommended boolean not null default false,
+  location text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  -- internal training MUST wrap an existing learning_modules row (never a
+  -- second copy of internal content); external training MUST NOT.
+  check (
+    (source_type in ('integrateu_internal', 'company_internal') and learning_module_id is not null)
+    or
+    (source_type not in ('integrateu_internal', 'company_internal') and learning_module_id is null)
+  )
+);
+create unique index uq_opportunities_learning_module on training_opportunities (learning_module_id) where learning_module_id is not null;
+create trigger trg_opportunities_sync_client_from_module before insert or update on training_opportunities
+  for each row execute function wri_sync_client_from_learning_module();
+create trigger trg_opportunities_updated_at before update on training_opportunities
+  for each row execute function wri_set_updated_at();
+create index ix_opportunities_client on training_opportunities (client_id);
+create index ix_opportunities_provider on training_opportunities (provider_id);
+alter table training_opportunities enable row level security;
+create policy opportunities_select on training_opportunities for select
+  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+create policy opportunities_write on training_opportunities for all
+  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
+  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+
+create table training_competency_map (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid,
+  training_opportunity_id uuid not null references training_opportunities(id) on delete cascade,
+  competency_id uuid not null references competencies(id),
+  relevance_note text,
+  created_at timestamptz not null default now(),
+  unique (training_opportunity_id, competency_id)
+);
+create trigger trg_tcm_sync_client before insert or update on training_competency_map
+  for each row execute function wri_sync_client_from_parent('training_opportunities', 'training_opportunity_id');
+create index ix_tcm_competency on training_competency_map (competency_id);
+alter table training_competency_map enable row level security;
+create policy tcm_select on training_competency_map for select
+  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+create policy tcm_write on training_competency_map for all
+  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
+  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+
+create table training_role_map (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid,
+  training_opportunity_id uuid not null references training_opportunities(id) on delete cascade,
+  role_id uuid not null references roles(id),
+  relevance_note text,
+  created_at timestamptz not null default now(),
+  unique (training_opportunity_id, role_id)
+);
+create trigger trg_trm_sync_client before insert or update on training_role_map
+  for each row execute function wri_sync_client_from_parent('training_opportunities', 'training_opportunity_id');
+create index ix_trm_role on training_role_map (role_id);
+alter table training_role_map enable row level security;
+create policy trm_select on training_role_map for select
+  using (client_id is null or wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+create policy trm_write on training_role_map for all
+  using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
+  with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+
+-- ============================================================================
+-- back to PART D — development_plan_items can now legally reference
+-- training_opportunities (created just above).
+-- ============================================================================
+
 create table development_plan_items (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
@@ -711,8 +746,8 @@ create table development_plan_items (
   priority int not null default 0,
   current_level int,
   required_level int,
-  training_opportunity_id uuid references training_opportunities(id), -- preferred: link a real catalog record
-  recommended_training text,             -- fallback free text when no catalog record exists yet
+  training_opportunity_id uuid references training_opportunities(id),
+  recommended_training text,
   recommended_vendor_training text,
   recommended_internal_training text,
   recommended_external_training text,
@@ -799,29 +834,12 @@ create policy history_all on coaching_history for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
-create table competency_evidence (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid not null references clients(id),
-  employee_id uuid not null references employees(id) on delete cascade,
-  competency_id uuid not null references competencies(id),
-  evidence_type text not null check (evidence_type in
-    ('knowledge_assessment', 'completed_training', 'certification',
-     'manager_evaluation', 'demonstrated_skill', 'practical_assessment', 'work_experience')),
-  detail text not null,
-  source_ref uuid,
-  evidence_date date,
-  created_by uuid,
-  created_at timestamptz not null default now()
-);
-create trigger trg_evidence_sync_client before insert or update on competency_evidence
-  for each row execute function wri_sync_client_from_employee();
-create index ix_evidence_client on competency_evidence (client_id);
-create index ix_evidence_employee on competency_evidence (employee_id);
-create index ix_evidence_competency on competency_evidence (competency_id);
-alter table competency_evidence enable row level security;
-create policy evidence_all on competency_evidence for all
-  using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
-  with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+-- The ONLY change to an existing table in this entire migration: one
+-- additive, nullable column so external/vendor training completions can
+-- also produce evidence, alongside the existing learning_module_id path.
+alter table competency_evidence
+  add column if not exists training_opportunity_id uuid references training_opportunities(id);
+create index if not exists ix_evidence_training_opportunity on competency_evidence (training_opportunity_id);
 
 
 create table practical_skill_ratings (
@@ -871,13 +889,6 @@ create policy reports_all on reports for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
-
-
--- ============================================================================
--- PART D2 — Employee training assignments (after development_plan_items,
---           which it references)
--- ============================================================================
-
 create table employee_training_assignments (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
@@ -908,25 +919,9 @@ create policy assignments_all on employee_training_assignments for all
 
 
 -- ============================================================================
--- PART F — Recommendation-ranking support (REVISION 3)
--- Schema only — no ranking/AI engine is built here. These tables just make
--- sure every input the future engine needs already has somewhere to live,
--- so adding the engine later doesn't require another schema redesign:
---   competency gap        -> competency_scores (existing, Part B)
---   current / target role -> employee_role_assignments (below)
---   company vendors used  -> client_vendors (below)
---   company-required training -> company_training_requirements (below)
---   IntegrateU-recommended training -> training_opportunities.integrateu_recommended (above)
---   employee's completed training -> employee_training_assignments (existing)
---   certifications held   -> employee_certifications (below)
---   practical skill evidence -> practical_skill_ratings (existing, Part D)
---   location/online availability -> training_opportunities.delivery_format/location (above)
---   cost                  -> training_opportunities.cost_amount/cost_currency (above)
+-- PART F — Company vendor profiles, certifications, company-mandated training
 -- ============================================================================
 
--- Which vendors/manufacturers a company actually uses — lets a future
--- recommendation engine prioritize training from vendors they're already
--- invested in over generic/unrelated vendor training.
 create table client_vendors (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
@@ -934,7 +929,7 @@ create table client_vendors (
   status text not null default 'active' check (status in ('active', 'inactive')),
   is_preferred boolean not null default false,
   tier text check (tier in ('primary', 'secondary')),
-  product_categories jsonb, -- e.g. ["lighting","networking"]
+  product_categories jsonb,
   notes text,
   added_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -951,40 +946,11 @@ create policy client_vendors_all on client_vendors for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
--- An employee's current and (optional) target role as standing facts —
--- distinct from a one-off assessment_attempts.job_role_id snapshot, this is
--- the durable "who they are now / where they're headed" the engine reads.
-create table employee_role_assignments (
-  id uuid primary key default gen_random_uuid(),
-  client_id uuid not null references clients(id),
-  employee_id uuid not null references employees(id) on delete cascade,
-  job_role_id uuid not null references job_roles(id),
-  assignment_type text not null check (assignment_type in ('current', 'target')),
-  effective_date date not null default current_date,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create trigger trg_role_assignments_sync_client before insert or update on employee_role_assignments
-  for each row execute function wri_sync_client_from_employee();
-create trigger trg_role_assignments_updated_at before update on employee_role_assignments
-  for each row execute function wri_set_updated_at();
-create unique index uq_role_assignment_active on employee_role_assignments (employee_id, assignment_type) where is_active;
-create index ix_role_assignments_client on employee_role_assignments (client_id);
-create index ix_role_assignments_role on employee_role_assignments (job_role_id);
-alter table employee_role_assignments enable row level security;
-create policy role_assignments_all on employee_role_assignments for all
-  using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
-  with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
-
-
--- Structured certifications (distinct from competency_evidence's freeform
--- detail text) so expiry/provider/opportunity can be queried directly.
 create table employee_certifications (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
   employee_id uuid not null references employees(id) on delete cascade,
-  training_opportunity_id uuid references training_opportunities(id), -- set if earned via a cataloged opportunity
+  training_opportunity_id uuid references training_opportunities(id),
   certification_name text not null,
   issued_by text,
   issued_date date,
@@ -1006,19 +972,16 @@ create policy certifications_all on employee_certifications for all
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
 
--- Training a company mandates itself (independent of role/competency
--- requirements) — e.g. an annual safety refresher every technician must
--- take regardless of assessed gaps. The engine can rank these highest.
 create table company_training_requirements (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id),
   training_opportunity_id uuid not null references training_opportunities(id),
-  job_role_id uuid references job_roles(id), -- null = required for every role
+  role_id uuid references roles(id), -- null = required for every role
   required boolean not null default true,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (client_id, training_opportunity_id, job_role_id)
+  unique (client_id, training_opportunity_id, role_id)
 );
 create trigger trg_company_reqs_updated_at before update on company_training_requirements
   for each row execute function wri_set_updated_at();
@@ -1029,7 +992,45 @@ create policy company_reqs_all on company_training_requirements for all
   using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
+-- Target/future role tracking. employee_role_assignments (existing,
+-- untouched) is actual/current-role history — is_primary, status,
+-- effective_start_date/end_date all say "this is the role they hold," not
+-- "this is the role they're working toward." Kept as a separate additive
+-- table rather than overloading that table's meaning.
+create table employee_target_roles (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references clients(id),
+  employee_id uuid not null references employees(id) on delete cascade,
+  role_id uuid not null references roles(id),
+  status text not null default 'active' check (status in ('active', 'achieved', 'abandoned')),
+  set_by uuid,
+  effective_start_date date not null default current_date,
+  effective_end_date date,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger trg_target_roles_sync_client before insert or update on employee_target_roles
+  for each row execute function wri_sync_client_from_employee();
+create trigger trg_target_roles_updated_at before update on employee_target_roles
+  for each row execute function wri_set_updated_at();
+create unique index uq_target_role_active on employee_target_roles (employee_id) where status = 'active';
+create index ix_target_roles_client on employee_target_roles (client_id);
+create index ix_target_roles_role on employee_target_roles (role_id);
+alter table employee_target_roles enable row level security;
+create policy target_roles_all on employee_target_roles for all
+  using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
+  with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
+
+
 -- ============================================================================
--- End of migration. role_readiness, employees, user_client_roles are
--- untouched. app/employees/[id]/page.tsx and page.backup.tsx are untouched.
+-- End of migration.
+--
+-- UNCHANGED, in full: employees, clients, user_client_roles, role_readiness,
+-- roles, competencies, employee_role_assignments, learning_modules, and
+-- every existing RLS policy and app file (app/employees/[id]/page.tsx,
+-- page.backup.tsx included).
+--
+-- ONLY existing-table change anywhere in this file: one additive nullable
+-- column, competency_evidence.training_opportunity_id.
 -- ============================================================================
