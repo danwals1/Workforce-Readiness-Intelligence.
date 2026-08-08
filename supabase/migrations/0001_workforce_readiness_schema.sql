@@ -237,20 +237,8 @@ create policy adoptions_all on template_adoptions for all
   using (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()))
   with check (wri_is_integrateu_admin() or client_id in (select wri_allowed_client_ids()));
 
-create or replace view v_template_adoption_status as
-select
-  ta.*,
-  case ta.entity_type
-    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current)
-    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current)
-    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current)
-  end as current_published_version,
-  case ta.entity_type
-    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current) > ta.source_version
-    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current) > ta.source_version
-    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current) > ta.source_version
-  end as newer_version_available
-from template_adoptions ta;
+-- (v_template_adoption_status is created after `assessments` exists —
+-- see below, right after that table's policies — since it references it.)
 
 
 -- ============================================================================
@@ -305,6 +293,24 @@ create policy assessments_select on assessments for select
 create policy assessments_write on assessments for all
   using (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())))
   with check (wri_is_integrateu_admin() or (client_id is not null and client_id in (select wri_allowed_client_ids())));
+
+-- Created here, not in Part A, because it references assessments — every
+-- view/FK/function/trigger in this file must only touch tables that
+-- already exist at the point it runs.
+create or replace view v_template_adoption_status as
+select
+  ta.*,
+  case ta.entity_type
+    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current)
+    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current)
+    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current)
+  end as current_published_version,
+  case ta.entity_type
+    when 'role'       then (select max(version) from master_role_templates where family_id = ta.source_family_id and is_current) > ta.source_version
+    when 'competency' then (select max(version) from master_competency_templates where family_id = ta.source_family_id and is_current) > ta.source_version
+    when 'assessment' then (select max(version) from assessments where family_id = ta.source_family_id and is_current) > ta.source_version
+  end as newer_version_available
+from template_adoptions ta;
 
 
 -- Public-safe question content only — correct_answer lives in
