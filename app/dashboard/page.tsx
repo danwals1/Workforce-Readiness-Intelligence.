@@ -185,22 +185,29 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            {isIntegrateAdmin && (
-              <Link
-                href="/admin/library"
-                className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
-              >
-                IntegrateU Admin → Master Library
-              </Link>
-            )}
+  {isIntegrateAdmin && (
+    <Link
+      href="/admin/library"
+      className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+    >
+      IntegrateU Admin → Master Library
+    </Link>
+  )}
 
-            <button
-              onClick={handleLogout}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-            >
-              Sign Out
-            </button>
-          </div>
+  <Link
+    href="/assessments"
+    className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+  >
+    Assessments
+  </Link>
+
+  <button
+    onClick={handleLogout}
+    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+  >
+    Sign Out
+  </button>
+</div>
         </div>
 
         {message && (
