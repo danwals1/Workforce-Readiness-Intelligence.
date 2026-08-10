@@ -10,6 +10,7 @@ type Attempt = {
   employee_id: string;
   assessment_id: string;
   completed_at: string | null;
+  development_plan_id: string | null;
 };
 
 type Employee = {
@@ -113,8 +114,8 @@ export default function AssessmentResultsPage() {
           status,
           employee_id,
           assessment_id,
-          completed_at
-        `)
+          completed_at,
+          development_plan_id`)
         .eq("id", attemptId)
         .maybeSingle();
 
@@ -129,11 +130,36 @@ export default function AssessmentResultsPage() {
       }
 
       if (attemptData.status !== "completed") {
-        router.push(`/assessments/attempts/${attemptId}`);
+        router.push(
+          attemptData.development_plan_id
+            ? `/assessments/attempts/${attemptId}?plan=${encodeURIComponent(
+                attemptData.development_plan_id
+              )}`
+            : `/assessments/attempts/${attemptId}`
+        );
         return;
       }
 
       setAttempt(attemptData);
+
+      if (attemptData.development_plan_id) {
+        const {
+          error: resolutionRefreshError,
+        } = await supabase.rpc(
+          "wri_refresh_development_plan_resolution",
+          {
+            p_development_plan_id:
+              attemptData.development_plan_id,
+          }
+        );
+
+        if (resolutionRefreshError) {
+          console.error(
+            "Development plan resolution refresh failed:",
+            resolutionRefreshError
+          );
+        }
+      }
 
       const [
         employeeResponse,

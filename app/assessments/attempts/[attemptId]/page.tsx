@@ -387,7 +387,29 @@ export default function AssessmentAttemptPage() {
     <main className="min-h-screen bg-slate-950 px-6 py-8 text-white">
       <div className="mx-auto max-w-4xl">
         <div className="mb-8">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+  <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <button
+      type="button"
+      onClick={() =>
+        router.push("/assessments")
+      }
+      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+    >
+      ← Assessments
+    </button>
+
+    <button
+      type="button"
+      onClick={() =>
+        router.push("/dashboard")
+      }
+      className="text-sm text-slate-400 transition hover:text-white"
+    >
+      Dashboard
+    </button>
+  </div>
+
+  <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-sm font-medium text-cyan-400">
                 IntegrateU Assessment
