@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -14,157 +14,43 @@ type Employee = {
   auth_user_id: string | null;
 };
 
-type ReadinessSummary = {
-  attempt_id: string;
-  assessment_id: string;
-  assessment_name: string;
-  role_name: string;
-  average_knowledge_score: number;
-  critical_safety_score_percent: number | null;
-  competencies_ready: number;
-  competencies_total: number;
-  readiness_percent: number;
-  developing_count: number;
-  critical_gap_count: number;
-  practical_gap_count: number;
-  reverification_due_count: number;
-  reverification_required_count: number;
-  readiness_status: string;
-};
-
-type ReverificationItem = {
-  master_competency_template_id: string;
-  competency_name: string;
-  competency_category: string | null;
-  competency_is_critical: boolean;
-  practical_rating_level: number | null;
-  practical_verified_at: string | null;
-  reverification_period_months: number | null;
-  practical_verification_expires_at: string | null;
-  days_until_expiration: number | null;
-  reverification_due: boolean;
-  verification_expired: boolean;
-  verification_currency_status: string;
-  readiness_status: string;
-};
-
-type VerificationHistory = {
-  verification_id: string;
+type Readiness = {
   employee_id: string;
-  client_id: string;
-
-  employee_first_name: string;
-  employee_last_name: string;
-  employee_number: string | null;
-
-  master_competency_template_id: string;
-  competency_name: string;
-  competency_category: string | null;
-  competency_is_critical: boolean;
-
-  rating_level: number;
   status: string;
-
-  verifier_user_id: string | null;
-  verifier_email: string | null;
-  verifier_employee_id: string | null;
-  verifier_first_name: string | null;
-  verifier_last_name: string | null;
-
-  verified_at: string | null;
+  readiness_percent: number;
+  requirements_met: number;
+  requirements_total: number;
+  competencies_met: number;
+  competencies_total: number;
   created_at: string;
-
-  notes: string | null;
 };
 
-export default function EmployeePage() {
-  const params = useParams();
+type EmployeeWithReadiness = Employee & {
+  readiness: Readiness | null;
+};
+
+export default function DashboardPage() {
   const router = useRouter();
 
-  const employeeId = params.id as string;
+  const [employees, setEmployees] = useState<EmployeeWithReadiness[]>([]);
+  const [message, setMessage] = useState("Loading...");
+  const [isIntegrateAdmin, setIsIntegrateAdmin] = useState(false);
 
-  const [employee, setEmployee] =
-    useState<Employee | null>(null);
-
-  const [summary, setSummary] =
-    useState<ReadinessSummary | null>(null);
-
-  const [reverification, setReverification] =
-    useState<ReverificationItem[]>([]);
-
-  const [history, setHistory] =
-    useState<VerificationHistory[]>([]);
-
-  const [message, setMessage] =
-    useState("Loading employee profile...");
-
-  const [canVerify, setCanVerify] =
-    useState(false);
-
-  const [isOwnProfile, setIsOwnProfile] =
-    useState(false);
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/");
+  }
 
   useEffect(() => {
-    async function loadEmployee() {
-      setMessage("Loading employee profile...");
-
-      const {
-        data: sessionData,
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        setMessage(sessionError.message);
-        return;
-      }
+    async function loadDashboard() {
+      const { data: sessionData } = await supabase.auth.getSession();
 
       if (!sessionData.session) {
         router.push("/");
         return;
       }
 
-      const userId =
-        sessionData.session.user.id;
-
-      // --------------------------------------------------
-      // Employee
-      // --------------------------------------------------
-
-      const {
-        data: employeeData,
-        error: employeeError,
-      } = await supabase
-        .from("employees")
-        .select(`
-          id,
-          first_name,
-          last_name,
-          employee_number,
-          client_id,
-          auth_user_id
-        `)
-        .eq("id", employeeId)
-        .maybeSingle();
-
-      if (
-        employeeError ||
-        !employeeData
-      ) {
-        setMessage(
-          "Employee not found or access denied."
-        );
-        return;
-      }
-
-      const ownProfile =
-        employeeData.auth_user_id ===
-        userId;
-
-      setIsOwnProfile(ownProfile);
-
-      // --------------------------------------------------
-      // Admin permissions
-      // --------------------------------------------------
+      const userId = sessionData.session.user.id;
 
       const {
         data: roles,
@@ -182,488 +68,107 @@ export default function EmployeePage() {
         return;
       }
 
-      const isIntegrateAdmin =
-        roles?.some(
-          (role) =>
-            role.role ===
-            "INTEGRATEU_ADMIN"
-        ) ?? false;
+      const integrateAdmin =
+        roles?.some((role) => role.role === "INTEGRATEU_ADMIN") ?? false;
 
-      const allowedClients =
+      setIsIntegrateAdmin(integrateAdmin);
+
+      const clientIds =
         roles
-          ?.filter(
-            (role) =>
-              role.role ===
-              "CLIENT_ADMIN"
-          )
-          .map(
-            (role) =>
-              role.client_id
-          )
-          .filter(
-            (
-              clientId
-            ): clientId is string =>
-              Boolean(clientId)
-          ) ?? [];
+          ?.filter((role) => role.role === "CLIENT_ADMIN")
+          .map((role) => role.client_id)
+          .filter((clientId): clientId is string => Boolean(clientId)) ?? [];
 
-      const isClientAdmin =
-        allowedClients.includes(
-          employeeData.client_id
-        );
+      let employeeQuery = supabase
+        .from("employees")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          employee_number,
+          client_id,
+          auth_user_id
+        `);
 
-      // --------------------------------------------------
-      // Practical verifier permission
-      // --------------------------------------------------
-
-      const {
-        data: verifyPermission,
-        error: verifyPermissionError,
-      } = await supabase.rpc(
-        "wri_can_verify_master_practical",
-        {
-          p_employee_id:
-            employeeId,
-        }
-      );
-
-      if (verifyPermissionError) {
-        console.error(
-          "Verifier permission check failed:",
-          verifyPermissionError
-        );
+      if (integrateAdmin) {
+        // IntegrateU admins can see all employees allowed by RLS.
+      } else if (clientIds.length > 0) {
+        employeeQuery = employeeQuery.in("client_id", clientIds);
+      } else {
+        employeeQuery = employeeQuery.eq("auth_user_id", userId);
       }
 
-      const verifierPermission =
-        verifyPermission === true;
+      const {
+        data: employeeData,
+        error: employeeError,
+      } = await employeeQuery.order("last_name", { ascending: true });
 
-      setCanVerify(
-        verifierPermission
-      );
-
-      const canView =
-        ownProfile ||
-        isIntegrateAdmin ||
-        isClientAdmin ||
-        verifierPermission;
-
-      if (!canView) {
-        setMessage(
-          "Employee not found or access denied."
-        );
+      if (employeeError) {
+        setMessage(employeeError.message);
         return;
       }
 
-      setEmployee(
-        employeeData as Employee
-      );
+      if (!employeeData || employeeData.length === 0) {
+        setEmployees([]);
+        setMessage("No team members have been added to this client yet.");
+        return;
+      }
 
-      // --------------------------------------------------
-      // EXPIRATION-AWARE role readiness
-      //
-      // This is the new _current layer.
-      // --------------------------------------------------
+      const employeeIds = employeeData.map((employee) => employee.id);
 
       const {
-        data: summaryData,
-        error: summaryError,
+        data: readinessData,
+        error: readinessError,
       } = await supabase
-        .from(
-          "v_assessment_role_readiness_current"
-        )
+        .from("role_readiness")
         .select(`
-          attempt_id,
-          assessment_id,
-          assessment_name,
-          role_name,
-          average_knowledge_score,
-          critical_safety_score_percent,
-          competencies_ready,
-          competencies_total,
+          employee_id,
+          status,
           readiness_percent,
-          developing_count,
-          critical_gap_count,
-          practical_gap_count,
-          reverification_due_count,
-          reverification_required_count,
-          readiness_status
+          requirements_met,
+          requirements_total,
+          competencies_met,
+          competencies_total,
+          created_at
         `)
-        .eq(
-          "employee_id",
-          employeeId
-        )
-        .maybeSingle();
+        .in("employee_id", employeeIds)
+        .order("created_at", { ascending: false });
 
-      if (summaryError) {
-        console.error(
-          "Current readiness summary failed:",
-          summaryError
-        );
+      if (readinessError) {
+        setMessage(readinessError.message);
+        return;
       }
 
-      setSummary(
-        summaryData as
-          | ReadinessSummary
-          | null
+      /*
+        role_readiness can contain historical rows.
+        Because the query is newest-first, find() returns
+        the latest readiness record for each employee.
+      */
+      const combined: EmployeeWithReadiness[] = employeeData.map(
+        (employee) => ({
+          id: employee.id,
+          first_name: employee.first_name,
+          last_name: employee.last_name,
+          employee_number: employee.employee_number,
+          client_id: employee.client_id,
+          auth_user_id: employee.auth_user_id,
+          readiness:
+            readinessData?.find(
+              (row) => row.employee_id === employee.id
+            ) ?? null,
+        })
       );
 
-      // --------------------------------------------------
-      // Competency-level reverification status
-      // --------------------------------------------------
-
-      const {
-        data: reverificationData,
-        error: reverificationError,
-      } = await supabase
-        .from(
-          "v_assessment_competency_readiness_current"
-        )
-        .select(`
-          master_competency_template_id,
-          competency_name,
-          competency_category,
-          competency_is_critical,
-          practical_rating_level,
-          practical_verified_at,
-          reverification_period_months,
-          practical_verification_expires_at,
-          days_until_expiration,
-          reverification_due,
-          verification_expired,
-          verification_currency_status,
-          readiness_status
-        `)
-        .eq(
-          "employee_id",
-          employeeId
-        )
-        .eq(
-          "practical_verification_required",
-          true
-        )
-        .order(
-          "competency_name",
-          {
-            ascending: true,
-          }
-        );
-
-      if (reverificationError) {
-        console.error(
-          "Reverification status failed:",
-          reverificationError
-        );
-      } else {
-        setReverification(
-          (reverificationData ??
-            []) as ReverificationItem[]
-        );
-      }
-
-      // --------------------------------------------------
-      // Practical verification audit history
-      // --------------------------------------------------
-
-      const {
-        data: historyData,
-        error: historyError,
-      } = await supabase.rpc(
-        "wri_list_practical_verification_history",
-        {
-          p_employee_id:
-            employeeId,
-        }
-      );
-
-      if (historyError) {
-        console.error(
-          "Verification history failed:",
-          historyError
-        );
-      } else {
-        setHistory(
-          (historyData ??
-            []) as VerificationHistory[]
-        );
-      }
-
+      setEmployees(combined);
       setMessage("");
     }
 
-    loadEmployee();
-  }, [employeeId, router]);
-
-  async function logout() {
-    await supabase.auth.signOut();
-    router.push("/");
-  }
-
-  function statusLabel(
-    status: string
-  ) {
-    switch (status) {
-      case "ready":
-        return "Ready";
-
-      case "safety_gap":
-        return "Safety Gap";
-
-      case "critical_gap":
-        return "Critical Gap";
-
-      case "developing":
-        return "Developing";
-
-      case "practical_verification_needed":
-        return "Practical Verification Needed";
-
-      case "practical_development_needed":
-        return "Practical Development Needed";
-
-      case "reverification_required":
-        return "Reverification Required";
-
-      default:
-        return status;
-    }
-  }
-
-  function statusClasses(
-    status: string
-  ) {
-    switch (status) {
-      case "ready":
-        return "bg-emerald-500/15 text-emerald-300";
-
-      case "safety_gap":
-      case "critical_gap":
-        return "bg-rose-500/15 text-rose-300";
-
-      case "reverification_required":
-        return "bg-orange-500/15 text-orange-300";
-
-      case "developing":
-      case "practical_verification_needed":
-      case "practical_development_needed":
-        return "bg-amber-500/15 text-amber-300";
-
-      default:
-        return "bg-slate-800 text-slate-300";
-    }
-  }
-
-  function verificationStatusClasses(
-    status: string
-  ) {
-    switch (status) {
-      case "verified":
-        return "bg-emerald-500/15 text-emerald-300";
-
-      case "rejected":
-        return "bg-rose-500/15 text-rose-300";
-
-      case "pending":
-        return "bg-amber-500/15 text-amber-300";
-
-      default:
-        return "bg-slate-800 text-slate-300";
-    }
-  }
-
-  function currencyLabel(
-    status: string
-  ) {
-    switch (status) {
-      case "current":
-        return "Current";
-
-      case "due_soon":
-        return "Due Soon";
-
-      case "expired":
-        return "Reverification Required";
-
-      case "never_verified":
-        return "Not Yet Verified";
-
-      case "not_verified":
-        return "Not Verified";
-
-      case "not_required":
-        return "Not Required";
-
-      default:
-        return status;
-    }
-  }
-
-  function currencyClasses(
-    status: string
-  ) {
-    switch (status) {
-      case "current":
-        return "bg-emerald-500/15 text-emerald-300";
-
-      case "due_soon":
-        return "bg-amber-500/15 text-amber-300";
-
-      case "expired":
-        return "bg-rose-500/15 text-rose-300";
-
-      default:
-        return "bg-slate-800 text-slate-300";
-    }
-  }
-
-  function proficiencyLabel(
-    level: number
-  ) {
-    switch (level) {
-      case 1:
-        return "Awareness";
-
-      case 2:
-        return "Working Knowledge";
-
-      case 3:
-        return "Proficient / Independent";
-
-      case 4:
-        return "Advanced / Can Lead or Coach";
-
-      default:
-        return "";
-    }
-  }
-
-  function verifierName(
-    item: VerificationHistory
-  ) {
-    const fullName = [
-      item.verifier_first_name,
-      item.verifier_last_name,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    return (
-      fullName ||
-      item.verifier_email ||
-      "Unknown verifier"
-    );
-  }
-
-  function hasVerifierName(
-    item: VerificationHistory
-  ) {
-    return Boolean(
-      item.verifier_first_name ||
-        item.verifier_last_name
-    );
-  }
-
-  function formatDate(
-    value: string | null
-  ) {
-    if (!value) {
-      return "—";
-    }
-
-    return new Date(
-      value
-    ).toLocaleString();
-  }
-
-  function formatDateOnly(
-    value: string | null
-  ) {
-    if (!value) {
-      return "—";
-    }
-
-    return new Date(
-      value
-    ).toLocaleDateString();
-  }
-
-  const uniqueVerifiedCompetencies =
-    useMemo(
-      () =>
-        new Set(
-          history
-            .filter(
-              (item) =>
-                item.status ===
-                "verified"
-            )
-            .map(
-              (item) =>
-                item.master_competency_template_id
-            )
-        ).size,
-      [history]
-    );
-
-  const currencyItems =
-    useMemo(
-      () =>
-        reverification.filter(
-          (item) =>
-            item.reverification_period_months !==
-              null &&
-            item.reverification_period_months >
-              0 &&
-            item.practical_verified_at !==
-              null
-        ),
-      [reverification]
-    );
-
-  const dueSoonItems =
-    useMemo(
-      () =>
-        currencyItems.filter(
-          (item) =>
-            item.reverification_due
-        ),
-      [currencyItems]
-    );
-
-  const expiredItems =
-    useMemo(
-      () =>
-        currencyItems.filter(
-          (item) =>
-            item.verification_expired
-        ),
-      [currencyItems]
-    );
-
-  if (!employee) {
-    return (
-      <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-        <div className="mx-auto max-w-6xl">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-slate-300">
-            {message}
-          </div>
-
-          <Link
-            href="/dashboard"
-            className="mt-6 inline-block text-cyan-400 hover:text-cyan-300"
-          >
-            ← Back to Dashboard
-          </Link>
-        </div>
-      </main>
-    );
-  }
+    loadDashboard();
+  }, [router]);
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-6xl">
-
-        {/* Header */}
-
         <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium text-cyan-400">
@@ -671,582 +176,143 @@ export default function EmployeePage() {
             </p>
 
             <h1 className="mt-2 text-3xl font-semibold">
-              Employee Readiness Profile
+              Role Readiness
             </h1>
 
             <p className="mt-2 text-slate-400">
-              Assessment performance,
-              competency readiness,
-              practical verification, and
-              reverification currency.
+              Team overview
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              ← Dashboard
-            </Link>
+  {isIntegrateAdmin && (
+    <Link
+      href="/admin/library"
+      className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+    >
+      IntegrateU Admin → Master Library
+    </Link>
+  )}
 
-            {!isOwnProfile &&
-              canVerify && (
-                <Link
-                  href={`/employees/${employee.id}/practical-verification`}
-                  className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                >
-                  Practical Verification
-                </Link>
-              )}
+  <Link
+    href="/assessments"
+    className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+  >
+    Assessments
+  </Link>
 
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-            >
-              Sign Out
-            </button>
-          </div>
+  <Link
+    href="/readiness-actions"
+    className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+  >
+    Readiness Actions
+  </Link>
+
+  <button
+    onClick={handleLogout}
+    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+  >
+    Sign Out
+  </button>
+</div>
         </div>
 
-        {/* Employee readiness */}
+        {message && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
+            {message}
+          </div>
+        )}
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm text-slate-400">
-                Employee
-              </p>
-
-              <h2 className="mt-1 text-3xl font-semibold">
-                {employee.first_name}{" "}
-                {employee.last_name}
-              </h2>
-
-              {employee.employee_number && (
-                <p className="mt-1 text-sm text-slate-500">
-                  {
-                    employee.employee_number
-                  }
-                </p>
-              )}
-            </div>
-
-            {summary && (
-              <span
-                className={`w-fit rounded-full px-3 py-1 text-sm font-medium ${statusClasses(
-                  summary.readiness_status
-                )}`}
+        {employees.length > 0 && (
+          <div className="grid gap-6 md:grid-cols-2">
+            {employees.map((employee) => (
+              <Link
+                key={employee.id}
+                href={`/employees/${employee.id}`}
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
               >
-                {statusLabel(
-                  summary.readiness_status
-                )}
-              </span>
-            )}
-          </div>
-
-          {!summary ? (
-            <div className="mt-8 rounded-xl border border-slate-800 bg-slate-950/50 p-5">
-              <p className="font-medium">
-                No completed assessment
-                yet
-              </p>
-
-              <p className="mt-2 text-sm text-slate-400">
-                Assessment and readiness
-                information will appear
-                here after completion.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="mt-8">
                 <p className="text-sm text-slate-400">
-                  {
-                    summary.assessment_name
-                  }
+                  Employee
                 </p>
 
-                <p className="mt-1 text-lg font-medium">
-                  {summary.role_name}
-                </p>
-              </div>
+                <h2 className="mt-1 text-2xl font-semibold">
+                  {employee.first_name} {employee.last_name}
+                </h2>
 
-              <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 p-5">
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-slate-400">
-                      Role Readiness
-                    </p>
-
-                    <p className="mt-1 text-4xl font-bold">
-                      {
-                        summary.readiness_percent
-                      }
-                      %
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="text-sm text-slate-400">
-                      Competencies Ready
-                    </p>
-
-                    <p className="mt-1 text-xl font-semibold">
-                      {
-                        summary.competencies_ready
-                      }
-                      /
-                      {
-                        summary.competencies_total
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-cyan-400"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(
-                          0,
-                          Number(
-                            summary.readiness_percent
-                          )
-                        )
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                  <p className="text-sm text-slate-400">
-                    Knowledge
+                {employee.employee_number && (
+                  <p className="mt-2 text-sm text-slate-400">
+                    {employee.employee_number}
                   </p>
+                )}
 
-                  <p className="mt-1 text-2xl font-semibold">
-                    {
-                      summary.average_knowledge_score
-                    }
-                    %
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                  <p className="text-sm text-slate-400">
-                    Critical Safety
-                  </p>
-
-                  <p
-                    className={`mt-1 text-2xl font-semibold ${
-                      summary.critical_safety_score_percent !==
-                        null &&
-                      summary.critical_safety_score_percent <
-                        80
-                        ? "text-rose-300"
-                        : ""
-                    }`}
-                  >
-                    {summary.critical_safety_score_percent !==
-                    null
-                      ? `${summary.critical_safety_score_percent}%`
-                      : "—"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <div className="rounded-xl bg-slate-950/50 p-4">
-                  <p className="text-xs text-slate-500">
-                    Developing
-                  </p>
-
-                  <p className="mt-1 text-xl font-semibold text-amber-300">
-                    {
-                      summary.developing_count
-                    }
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-slate-950/50 p-4">
-                  <p className="text-xs text-slate-500">
-                    Critical Gaps
-                  </p>
-
-                  <p className="mt-1 text-xl font-semibold text-rose-300">
-                    {
-                      summary.critical_gap_count
-                    }
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-slate-950/50 p-4">
-                  <p className="text-xs text-slate-500">
-                    Practical Gaps
-                  </p>
-
-                  <p className="mt-1 text-xl font-semibold text-amber-300">
-                    {
-                      summary.practical_gap_count
-                    }
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-slate-950/50 p-4">
-                  <p className="text-xs text-slate-500">
-                    Reverify Soon
-                  </p>
-
-                  <p className="mt-1 text-xl font-semibold text-amber-300">
-                    {
-                      summary.reverification_due_count
-                    }
-                  </p>
-                </div>
-
-                <div className="rounded-xl bg-slate-950/50 p-4">
-                  <p className="text-xs text-slate-500">
-                    Reverify Required
-                  </p>
-
-                  <p className="mt-1 text-xl font-semibold text-rose-300">
-                    {
-                      summary.reverification_required_count
-                    }
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <Link
-                  href={`/assessments/attempts/${summary.attempt_id}/results`}
-                  className="inline-block rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-                >
-                  View Assessment Results
-                </Link>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* Reverification Currency */}
-
-        <section className="mt-8">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold">
-                Verification Currency
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                Practical competencies with
-                an active reverification
-                requirement.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Due Soon
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-amber-300">
-                  {dueSoonItems.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Required
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-rose-300">
-                  {expiredItems.length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {currencyItems.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
-              No practical competencies
-              currently have a reverification
-              period configured.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {currencyItems.map(
-                (item) => (
-                  <article
-                    key={
-                      item.master_competency_template_id
-                    }
-                    className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
-                  >
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                {employee.readiness ? (
+                  <div className="mt-6">
+                    <div className="flex items-end justify-between gap-4">
                       <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {item.competency_category && (
-                            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-                              {
-                                item.competency_category
-                              }
-                            </span>
-                          )}
+                        <p className="text-sm text-slate-400">
+                          Readiness
+                        </p>
 
-                          {item.competency_is_critical && (
-                            <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
-                              Critical
-                            </span>
-                          )}
-
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${currencyClasses(
-                              item.verification_currency_status
-                            )}`}
-                          >
-                            {currencyLabel(
-                              item.verification_currency_status
-                            )}
-                          </span>
-                        </div>
-
-                        <h3 className="mt-3 text-xl font-semibold">
-                          {
-                            item.competency_name
-                          }
-                        </h3>
-
-                        <p className="mt-2 text-sm text-slate-400">
-                          Reverify every{" "}
-                          {
-                            item.reverification_period_months
-                          }{" "}
-                          months
+                        <p className="mt-1 text-4xl font-bold">
+                          {employee.readiness.readiness_percent}%
                         </p>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Current Rating
-                          </p>
+                      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300">
+                        {employee.readiness.status}
+                      </span>
+                    </div>
 
-                          <p className="mt-1 font-semibold">
-                            {item.practical_rating_level
-                              ? `Level ${item.practical_rating_level}`
-                              : "—"}
-                          </p>
-                        </div>
+                    <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-cyan-400"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              employee.readiness.readiness_percent
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
 
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Expires
-                          </p>
+                    <div className="mt-6 grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-slate-400">
+                          Requirements
+                        </p>
 
-                          <p className="mt-1 font-semibold">
-                            {formatDateOnly(
-                              item.practical_verification_expires_at
-                            )}
-                          </p>
-                        </div>
+                        <p className="text-lg font-semibold">
+                          {employee.readiness.requirements_met}/
+                          {employee.readiness.requirements_total}
+                        </p>
+                      </div>
 
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Days Remaining
-                          </p>
+                      <div>
+                        <p className="text-sm text-slate-400">
+                          Competencies
+                        </p>
 
-                          <p
-                            className={`mt-1 font-semibold ${
-                              item.verification_expired
-                                ? "text-rose-300"
-                                : item.reverification_due
-                                ? "text-amber-300"
-                                : "text-emerald-300"
-                            }`}
-                          >
-                            {item.days_until_expiration !==
-                            null
-                              ? item.days_until_expiration
-                              : "—"}
-                          </p>
-                        </div>
+                        <p className="text-lg font-semibold">
+                          {employee.readiness.competencies_met}/
+                          {employee.readiness.competencies_total}
+                        </p>
                       </div>
                     </div>
-                  </article>
-                )
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* Verification History */}
-
-        <section className="mt-8">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold">
-                Practical Verification
-                History
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                Complete audit trail of
-                practical competency
-                verification activity.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  History Events
-                </p>
-
-                <p className="mt-1 text-xl font-semibold">
-                  {history.length}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-                <p className="text-xs text-slate-500">
-                  Competencies Verified
-                </p>
-
-                <p className="mt-1 text-xl font-semibold text-emerald-300">
-                  {
-                    uniqueVerifiedCompetencies
-                  }
-                </p>
-              </div>
-            </div>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                    <p className="text-sm text-slate-400">
+                      No readiness assessment available yet.
+                    </p>
+                  </div>
+                )}
+              </Link>
+            ))}
           </div>
-
-          {history.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
-              No practical verification
-              history has been recorded yet.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {history.map(
-                (item) => (
-                  <article
-                    key={
-                      item.verification_id
-                    }
-                    className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
-                  >
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="max-w-3xl">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {item.competency_category && (
-                            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-                              {
-                                item.competency_category
-                              }
-                            </span>
-                          )}
-
-                          {item.competency_is_critical && (
-                            <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
-                              Critical
-                            </span>
-                          )}
-
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${verificationStatusClasses(
-                              item.status
-                            )}`}
-                          >
-                            {item.status}
-                          </span>
-                        </div>
-
-                        <h3 className="mt-3 text-xl font-semibold">
-                          {
-                            item.competency_name
-                          }
-                        </h3>
-
-                        <p className="mt-3 text-sm text-slate-400">
-                          Verified by{" "}
-                          <span className="font-medium text-slate-300">
-                            {verifierName(
-                              item
-                            )}
-                          </span>
-                        </p>
-
-                        {item.verifier_email &&
-                          hasVerifierName(
-                            item
-                          ) && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              {
-                                item.verifier_email
-                              }
-                            </p>
-                          )}
-
-                        {item.notes && (
-                          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Verification Notes
-                            </p>
-
-                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
-                              {item.notes}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="grid min-w-[250px] grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Rating
-                          </p>
-
-                          <p className="mt-1 text-2xl font-semibold">
-                            Level{" "}
-                            {
-                              item.rating_level
-                            }
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {proficiencyLabel(
-                              item.rating_level
-                            )}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Verified
-                          </p>
-
-                          <p className="mt-1 text-sm font-medium">
-                            {formatDate(
-                              item.verified_at ??
-                                item.created_at
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                )
-              )}
-            </div>
-          )}
-        </section>
+        )}
       </div>
     </main>
   );
