@@ -603,6 +603,46 @@ export default function PracticalVerificationPage() {
       return;
     }
 
+    const {
+      data: linkedPlans,
+      error: linkedPlansError,
+    } = await supabase
+      .from("development_plans")
+      .select("id")
+      .eq("employee_id", employeeId)
+      .eq(
+        "master_competency_template_id",
+        competencyId
+      );
+
+    if (linkedPlansError) {
+      console.error(
+        "Unable to locate linked Development Plans:",
+        linkedPlansError
+      );
+    } else if (linkedPlans && linkedPlans.length > 0) {
+      const refreshResults = await Promise.all(
+        linkedPlans.map((linkedPlan) =>
+          supabase.rpc(
+            "wri_refresh_development_plan_resolution",
+            {
+              p_development_plan_id:
+                linkedPlan.id,
+            }
+          )
+        )
+      );
+
+      refreshResults.forEach((result) => {
+        if (result.error) {
+          console.error(
+            "Development Plan resolution refresh failed:",
+            result.error
+          );
+        }
+      });
+    }
+
     setDrafts(
       (current) => ({
         ...current,
