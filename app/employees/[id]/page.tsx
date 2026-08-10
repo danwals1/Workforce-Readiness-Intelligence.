@@ -63,6 +63,7 @@ type VerificationHistory = {
 type DevelopmentPlanSummary = {
   development_plan_id: string;
   employee_id: string;
+action_type: string | null;
   action_label: string | null;
   competency_name_snapshot: string | null;
   title: string;
@@ -909,22 +910,25 @@ const uniqueVerifiedCompetencies =
         <div className="mt-4 space-y-4">
           {openDevelopmentPlans.map((plan) => (
             <article
-              key={plan.development_plan_id}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
-            >
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
-                      {plan.status
-                        .split("_")
-                        .map(
-                          (word) =>
-                            word.charAt(0).toUpperCase() +
-                            word.slice(1)
-                        )
-                        .join(" ")}
-                    </span>
+  key={plan.development_plan_id}
+  className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
+>
+  <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
+  {plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
+  plan.activities_total === 0
+    ? "Awaiting Verification"
+    : plan.status
+        .split("_")
+        .map(
+          (word) =>
+            word.charAt(0).toUpperCase() +
+            word.slice(1)
+        )
+        .join(" ")}
+</span>
 
                     <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
                       {plan.priority.charAt(0).toUpperCase() +
@@ -1003,11 +1007,19 @@ const uniqueVerifiedCompetencies =
                 </p>
 
                 <Link
-                  href={`/development-plans/${plan.development_plan_id}`}
-                  className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
-                >
-                  Open Plan
-                </Link>
+  href={
+    plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
+    plan.activities_total === 0
+      ? `/employees/${employeeId}/practical-verification`
+      : `/development-plans/${plan.development_plan_id}`
+  }
+  className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+>
+  {plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
+  plan.activities_total === 0
+    ? "Open Practical Verification"
+    : "Open Plan"}
+</Link>
               </div>
             </article>
           ))}
