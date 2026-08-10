@@ -983,9 +983,12 @@ const uniqueVerifiedCompetencies =
                       />
                     </div>
 
-                    <p className="mt-2 text-xs text-slate-500">
-                      {`${plan.activities_completed}/${plan.activities_total} activities complete`}
-                    </p>
+                   <p className="mt-2 text-xs text-slate-500">
+  {plan.activities_total === 0 &&
+  plan.title === "Practical Verification Needed"
+    ? "Awaiting verification"
+    : `${plan.activities_completed}/${plan.activities_total} activities complete`}
+</p>
                   </div>
                 </div>
               </div>
