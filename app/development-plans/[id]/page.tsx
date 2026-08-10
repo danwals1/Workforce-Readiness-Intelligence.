@@ -72,6 +72,23 @@ type NewActivityDraft = {
   dueDate: string;
 };
 
+type ResolutionEvidence = {
+  development_plan_id: string;
+  resolution_status: string;
+  initial_attempt_id: string | null;
+  initial_safety_questions: number;
+  initial_safety_correct: number;
+  initial_safety_score_percent: number | null;
+  reassessment_attempt_id: string | null;
+  reassessment_completed_at: string | null;
+  reassessment_safety_questions: number;
+  reassessment_safety_correct: number;
+  reassessment_safety_score_percent: number | null;
+  required_safety_threshold_percent: number;
+  reassessment_passed: boolean | null;
+  resolved_at: string | null;
+};
+
 export default function DevelopmentPlanPage() {
   const params = useParams();
   const router = useRouter();
@@ -79,6 +96,8 @@ export default function DevelopmentPlanPage() {
 
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null);
   const [activities, setActivities] = useState<DevelopmentActivity[]>([]);
+const [resolutionEvidence, setResolutionEvidence] =
+  useState<ResolutionEvidence | null>(null);
   const [message, setMessage] = useState("Loading development plan...");
   const [successMessage, setSuccessMessage] = useState("");
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
@@ -117,9 +136,42 @@ useState(false);
     setActivities((data ?? []) as DevelopmentActivity[]);
   }
 
+async function loadResolutionEvidence() {
+  const { data, error } = await supabase
+    .from("v_development_plan_resolution_evidence")
+    .select(`
+      development_plan_id,
+      resolution_status,
+      initial_attempt_id,
+      initial_safety_questions,
+      initial_safety_correct,
+      initial_safety_score_percent,
+      reassessment_attempt_id,
+      reassessment_completed_at,
+      reassessment_safety_questions,
+      reassessment_safety_correct,
+      reassessment_safety_score_percent,
+      required_safety_threshold_percent,
+      reassessment_passed,
+      resolved_at
+    `)
+    .eq("development_plan_id", planId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  setResolutionEvidence(
+    data ? (data as ResolutionEvidence) : null
+  );
+}
+
   async function refreshWorkspace() {
-    await Promise.all([loadPlan(), loadActivities()]);
-  }
+  await Promise.all([
+    loadPlan(),
+    loadActivities(),
+    loadResolutionEvidence(),
+  ]);
+}
 
 async function startTargetedReassessment() {
 if (!plan) {
@@ -372,6 +424,18 @@ router.push(
     return new Date(`${value}T12:00:00`).toLocaleDateString();
   }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
   if (!plan) {
     return (
       <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -464,11 +528,151 @@ router.push(
           </div>
         </section>
 
+{resolutionEvidence &&
+  resolutionEvidence.initial_safety_score_percent !== null && (
+    <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Resolution Evidence
+          </p>
+
+          <h2 className="mt-2 text-xl font-semibold">
+            Safety Readiness Improvement
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            This development plan was created from a critical safety
+            readiness gap. The scores below show the original assessment
+            result and the targeted reassessment used to determine
+            resolution.
+          </p>
+        </div>
+
+        {resolutionEvidence.reassessment_passed === true && (
+          <span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300">
+            Requirement Satisfied
+          </span>
+        )}
+      </div>
+
+      <div className="mt-7 grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+          <p className="text-sm text-slate-500">
+            Initial Safety Score
+          </p>
+
+          <p className="mt-2 text-4xl font-bold">
+            {resolutionEvidence.initial_safety_score_percent}%
+          </p>
+
+          <p className="mt-2 text-xs text-slate-500">
+            {resolutionEvidence.initial_safety_correct} of{" "}
+            {resolutionEvidence.initial_safety_questions} critical
+            safety questions correct
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+          <p className="text-sm text-slate-500">
+            Targeted Reassessment
+          </p>
+
+          <p
+            className={`mt-2 text-4xl font-bold ${
+              resolutionEvidence.reassessment_passed
+                ? "text-emerald-300"
+                : "text-white"
+            }`}
+          >
+            {resolutionEvidence.reassessment_safety_score_percent !== null
+              ? `${resolutionEvidence.reassessment_safety_score_percent}%`
+              : "Pending"}
+          </p>
+
+          {resolutionEvidence.reassessment_attempt_id && (
+            <p className="mt-2 text-xs text-slate-500">
+              {resolutionEvidence.reassessment_safety_correct} of{" "}
+              {resolutionEvidence.reassessment_safety_questions} targeted
+              safety questions correct
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+          <p className="text-sm text-slate-500">
+            Required Threshold
+          </p>
+
+          <p className="mt-2 text-4xl font-bold">
+            {resolutionEvidence.required_safety_threshold_percent}%
+          </p>
+
+          <p className="mt-2 text-xs text-slate-500">
+            Minimum score required to close the safety gap
+          </p>
+        </div>
+      </div>
+
+      {resolutionEvidence.reassessment_passed === true &&
+        resolutionEvidence.reassessment_safety_score_percent !== null &&
+        resolutionEvidence.initial_safety_score_percent !== null && (
+          <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-emerald-300">
+                  ✓ Safety requirement satisfied
+                </p>
+
+                <p className="mt-1 text-sm text-emerald-200/70">
+                  Improved{" "}
+                  {(
+                    resolutionEvidence.reassessment_safety_score_percent -
+                    resolutionEvidence.initial_safety_score_percent
+                  ).toFixed(1)}{" "}
+                  percentage points from the initial assessment.
+                </p>
+              </div>
+
+              <div className="text-sm text-slate-400 sm:text-right">
+                {resolutionEvidence.resolved_at && (
+                  <p>
+                    Resolved{" "}
+                    {formatDateTime(resolutionEvidence.resolved_at)}
+                  </p>
+                )}
+
+                {resolutionEvidence.reassessment_completed_at && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Reassessment completed{" "}
+                    {formatDateTime(
+                      resolutionEvidence.reassessment_completed_at
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+      {resolutionEvidence.reassessment_attempt_id && (
+        <div className="mt-5">
+          <Link
+            href={`/assessments/attempts/${resolutionEvidence.reassessment_attempt_id}/results`}
+            className="text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
+          >
+            View Reassessment Results →
+          </Link>
+        </div>
+      )}
+    </section>
+  )}                
+
         <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Next Required Action
+Next Required Action
               </p>
 
               <div className="mt-2 flex flex-wrap items-center gap-3">
