@@ -522,7 +522,25 @@ function displayedPlanProgress(
     : Number(plan.completion_percent);
 }
 
-  const uniqueVerifiedCompetencies =
+  const openDevelopmentPlans = useMemo(
+  () =>
+    developmentPlans.filter(
+      (plan) =>
+        plan.status !== "completed" &&
+        plan.status !== "cancelled"
+    ),
+  [developmentPlans]
+);
+
+const resolvedDevelopmentPlans = useMemo(
+  () =>
+    developmentPlans.filter(
+      (plan) => plan.status === "completed"
+    ),
+  [developmentPlans]
+);
+
+const uniqueVerifiedCompetencies =
     useMemo(
       () =>
         new Set(
@@ -647,18 +665,39 @@ function displayedPlanProgress(
           </div>
 
           {!summary ? (
-            <div className="mt-8 rounded-xl border border-slate-800 bg-slate-950/50 p-5">
-              <p className="font-medium">
-                No completed assessment
-                yet
-              </p>
+            <div className="flex gap-3">
+  <div className="flex gap-3">
+  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+    <p className="text-xs text-slate-500">
+      Open Plans
+    </p>
 
-              <p className="mt-2 text-sm text-slate-400">
-                Assessment and readiness
-                information will appear
-                here after completion.
-              </p>
-            </div>
+    <p className="mt-1 text-xl font-semibold">
+      {openDevelopmentPlans.length}
+    </p>
+  </div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+    <p className="text-xs text-slate-500">
+      Resolved
+    </p>
+
+    <p className="mt-1 text-xl font-semibold">
+      {resolvedDevelopmentPlans.length}
+    </p>
+  </div>
+</div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+    <p className="text-xs text-slate-500">
+      Resolved
+    </p>
+
+    <p className="mt-1 text-xl font-semibold">
+      {resolvedDevelopmentPlans.length}
+    </p>
+  </div>
+</div>
           ) : (
             <>
               <div className="mt-8">
@@ -811,36 +850,64 @@ function displayedPlanProgress(
 
     {/* Development Plans */}
 
-    <section className="mt-8">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">
-            Development Plans
-          </h2>
+<section className="mt-8">
+  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <h2 className="text-2xl font-semibold">
+        Development Plans
+      </h2>
 
-          <p className="mt-1 text-sm text-slate-400">
-            Development work tied to this employee&apos;s readiness gaps.
-          </p>
-        </div>
+      <p className="mt-1 text-sm text-slate-400">
+        Development work tied to this employee&apos;s readiness gaps.
+      </p>
+    </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-          <p className="text-xs text-slate-500">
-            Total Plans
-          </p>
+    <div className="flex gap-3">
+      <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+        <p className="text-xs text-slate-500">
+          Open Plans
+        </p>
 
-          <p className="mt-1 text-xl font-semibold">
-            {developmentPlans.length}
-          </p>
-        </div>
+        <p className="mt-1 text-xl font-semibold">
+          {openDevelopmentPlans.length}
+        </p>
       </div>
 
-      {developmentPlans.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
-          No development plans have been created for this employee yet.
+      <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+        <p className="text-xs text-slate-500">
+          Resolved
+        </p>
+
+        <p className="mt-1 text-xl font-semibold">
+          {resolvedDevelopmentPlans.length}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {developmentPlans.length === 0 ? (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+      No development plans have been created for this employee yet.
+    </div>
+  ) : (
+    <>
+      <div>
+        <h3 className="text-lg font-semibold">
+          Open Plans
+        </h3>
+
+        <p className="mt-1 text-sm text-slate-400">
+          Readiness work that still requires action.
+        </p>
+      </div>
+
+      {openDevelopmentPlans.length === 0 ? (
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+          No open development plans.
         </div>
       ) : (
-        <div className="space-y-4">
-          {developmentPlans.map((plan) => (
+        <div className="mt-4 space-y-4">
+          {openDevelopmentPlans.map((plan) => (
             <article
               key={plan.development_plan_id}
               className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
@@ -917,11 +984,8 @@ function displayedPlanProgress(
                     </div>
 
                     <p className="mt-2 text-xs text-slate-500">
-  {plan.status === "completed" &&
-  plan.activities_total === 0
-    ? "Resolved by verification"
-    : `${plan.activities_completed}/${plan.activities_total} activities complete`}
-</p>
+                      {`${plan.activities_completed}/${plan.activities_total} activities complete`}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -946,9 +1010,83 @@ function displayedPlanProgress(
           ))}
         </div>
       )}
-    </section>
 
-        {/* Verification History */}
+      {resolvedDevelopmentPlans.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold">
+            Resolved Plans
+          </h3>
+
+          <p className="mt-1 text-sm text-slate-400">
+            Completed readiness work and closed development plans.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {resolvedDevelopmentPlans.map((plan) => (
+              <article
+                key={plan.development_plan_id}
+                className="rounded-xl border border-slate-800 bg-slate-900/60 p-5"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300">
+                        Resolved
+                      </span>
+
+                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                        {plan.priority.charAt(0).toUpperCase() +
+                          plan.priority.slice(1)}{" "}
+                        Priority
+                      </span>
+                    </div>
+
+                    <h4 className="mt-3 text-lg font-semibold">
+                      {plan.title}
+                    </h4>
+
+                    {plan.competency_name_snapshot && (
+                      <p className="mt-1 text-sm text-slate-400">
+                        {plan.competency_name_snapshot}
+                      </p>
+                    )}
+
+                    {plan.action_label && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Created from: {plan.action_label}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-xs text-slate-500">
+                        Progress
+                      </p>
+
+                      <p className="text-xl font-semibold text-emerald-300">
+                        100%
+                      </p>
+                    </div>
+
+                    <Link
+                      href={`/development-plans/${plan.development_plan_id}`}
+                      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                    >
+                      View Plan
+                    </Link>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )}
+</section>
+
+{/* Verification History */}
 
         <section className="mt-8">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
