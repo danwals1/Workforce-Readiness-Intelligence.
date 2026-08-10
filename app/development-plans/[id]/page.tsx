@@ -89,6 +89,21 @@ type ResolutionEvidence = {
   resolved_at: string | null;
 };
 
+type PracticalEvidence = {
+  development_plan_id: string;
+  competency_name_snapshot: string | null;
+  required_level: number | null;
+  verification_id: string | null;
+  verified_level: number | null;
+  verification_status: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  notes: string | null;
+  verification_satisfied: boolean;
+  resolution_status: string;
+  resolved_at: string | null;
+};
+
 export default function DevelopmentPlanPage() {
   const params = useParams();
   const router = useRouter();
@@ -98,6 +113,8 @@ export default function DevelopmentPlanPage() {
   const [activities, setActivities] = useState<DevelopmentActivity[]>([]);
 const [resolutionEvidence, setResolutionEvidence] =
   useState<ResolutionEvidence | null>(null);
+const [practicalEvidence, setPracticalEvidence] =
+  useState<PracticalEvidence | null>(null);
   const [message, setMessage] = useState("Loading development plan...");
   const [successMessage, setSuccessMessage] = useState("");
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
@@ -136,6 +153,33 @@ useState(false);
     setActivities((data ?? []) as DevelopmentActivity[]);
   }
 
+async function loadPracticalEvidence() {
+  const { data, error } = await supabase
+    .from("v_development_plan_practical_evidence")
+    .select(`
+      development_plan_id,
+      competency_name_snapshot,
+      required_level,
+      verification_id,
+      verified_level,
+      verification_status,
+      verified_by,
+      verified_at,
+      notes,
+      verification_satisfied,
+      resolution_status,
+      resolved_at
+    `)
+    .eq("development_plan_id", planId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  setPracticalEvidence(
+    data ? (data as PracticalEvidence) : null
+  );
+}
+
 async function loadResolutionEvidence() {
   const { data, error } = await supabase
     .from("v_development_plan_resolution_evidence")
@@ -170,6 +214,7 @@ async function loadResolutionEvidence() {
     loadPlan(),
     loadActivities(),
     loadResolutionEvidence(),
+    loadPracticalEvidence(),
   ]);
 }
 
@@ -667,6 +712,115 @@ function formatDateTime(value: string | null) {
       )}
     </section>
   )}                
+
+{practicalEvidence && (
+  <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Resolution Evidence
+        </p>
+
+        <h2 className="mt-2 text-xl font-semibold">
+          Practical Verification
+        </h2>
+
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+          This evidence shows the practical verification used to determine
+          whether the competency requirement has been satisfied.
+        </p>
+      </div>
+
+      {practicalEvidence.verification_satisfied && (
+        <span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300">
+          Requirement Satisfied
+        </span>
+      )}
+    </div>
+
+    <div className="mt-7 grid gap-4 md:grid-cols-3">
+      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+        <p className="text-sm text-slate-500">
+          Required Level
+        </p>
+
+        <p className="mt-2 text-4xl font-bold">
+          {practicalEvidence.required_level ?? "—"}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Minimum practical level required for this competency
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+        <p className="text-sm text-slate-500">
+          Verified Level
+        </p>
+
+        <p
+          className={`mt-2 text-4xl font-bold ${
+            practicalEvidence.verification_satisfied
+              ? "text-emerald-300"
+              : "text-white"
+          }`}
+        >
+          {practicalEvidence.verified_level ?? "Pending"}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          Recorded practical competency rating
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+        <p className="text-sm text-slate-500">
+          Verification Status
+        </p>
+
+        <p className="mt-2 text-2xl font-bold capitalize">
+          {practicalEvidence.verification_status
+            ? practicalEvidence.verification_status.replaceAll("_", " ")
+            : "Pending"}
+        </p>
+
+        <p className="mt-2 text-xs text-slate-500">
+          {practicalEvidence.competency_name_snapshot || "Practical competency"}
+        </p>
+      </div>
+    </div>
+
+    {practicalEvidence.verification_satisfied && (
+      <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-semibold text-emerald-300">
+              ✓ Practical requirement satisfied
+            </p>
+
+            <p className="mt-1 text-sm text-emerald-200/70">
+              The verified practical level meets or exceeds the required level.
+            </p>
+          </div>
+
+          <div className="text-sm text-slate-400 sm:text-right">
+            {practicalEvidence.verified_at && (
+              <p>
+                Verified {formatDateTime(practicalEvidence.verified_at)}
+              </p>
+            )}
+
+            {practicalEvidence.resolved_at && (
+              <p className="mt-1 text-xs text-slate-500">
+                Plan resolved {formatDateTime(practicalEvidence.resolved_at)}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+  </section>
+)}
 
         <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
