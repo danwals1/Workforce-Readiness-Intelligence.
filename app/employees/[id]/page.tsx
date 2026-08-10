@@ -60,6 +60,21 @@ type VerificationHistory = {
   notes: string | null;
 };
 
+type DevelopmentPlanSummary = {
+  development_plan_id: string;
+  employee_id: string;
+  action_label: string | null;
+  competency_name_snapshot: string | null;
+  title: string;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  activities_total: number;
+  activities_completed: number;
+  completion_percent: number;
+  overdue: boolean;
+};
+
 export default function EmployeePage() {
   const params = useParams();
   const router = useRouter();
@@ -77,6 +92,9 @@ export default function EmployeePage() {
 
   const [history, setHistory] =
     useState<VerificationHistory[]>([]);
+
+  const [developmentPlans, setDevelopmentPlans] =
+    useState<DevelopmentPlanSummary[]>([]);
 
   const [message, setMessage] =
     useState("Loading employee profile...");
@@ -343,6 +361,30 @@ export default function EmployeePage() {
             []) as VerificationHistory[]
         );
       }
+
+
+    // Development plans
+    const {
+      data: developmentPlanData,
+      error: developmentPlanError,
+    } = await supabase.rpc(
+      "wri_list_development_plans",
+      {
+        p_employee_id: employeeId,
+        p_status: null,
+      }
+    );
+
+    if (developmentPlanError) {
+      console.error(
+        "Development plans failed:",
+        developmentPlanError
+      );
+    } else {
+      setDevelopmentPlans(
+        (developmentPlanData ?? []) as DevelopmentPlanSummary[]
+      );
+    }
 
       setMessage("");
     }
@@ -759,6 +801,144 @@ export default function EmployeePage() {
             </>
           )}
         </section>
+
+
+    {/* Development Plans */}
+
+    <section className="mt-8">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">
+            Development Plans
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-400">
+            Development work tied to this employee&apos;s readiness gaps.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+          <p className="text-xs text-slate-500">
+            Total Plans
+          </p>
+
+          <p className="mt-1 text-xl font-semibold">
+            {developmentPlans.length}
+          </p>
+        </div>
+      </div>
+
+      {developmentPlans.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+          No development plans have been created for this employee yet.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {developmentPlans.map((plan) => (
+            <article
+              key={plan.development_plan_id}
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
+            >
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
+                      {plan.status
+                        .split("_")
+                        .map(
+                          (word) =>
+                            word.charAt(0).toUpperCase() +
+                            word.slice(1)
+                        )
+                        .join(" ")}
+                    </span>
+
+                    <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                      {plan.priority.charAt(0).toUpperCase() +
+                        plan.priority.slice(1)}{" "}
+                      Priority
+                    </span>
+
+                    {plan.overdue && (
+                      <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
+                        Overdue
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="mt-3 text-xl font-semibold">
+                    {plan.title}
+                  </h3>
+
+                  {plan.competency_name_snapshot && (
+                    <p className="mt-2 text-sm text-slate-400">
+                      {plan.competency_name_snapshot}
+                    </p>
+                  )}
+
+                  {plan.action_label && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Created from: {plan.action_label}
+                    </p>
+                  )}
+                </div>
+
+                <div className="w-full sm:max-w-xs">
+                  <div className="rounded-xl bg-slate-950/50 p-4">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-slate-400">
+                        Progress
+                      </span>
+
+                      <span className="font-semibold">
+                        {plan.completion_percent}%
+                      </span>
+                    </div>
+
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-cyan-400"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              Number(plan.completion_percent)
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      {plan.activities_completed}/
+                      {plan.activities_total} activities complete
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-4">
+                <p className="text-sm text-slate-400">
+                  {plan.due_date
+                    ? `Due ${new Date(
+                        `${plan.due_date}T12:00:00`
+                      ).toLocaleDateString()}`
+                    : "No due date"}
+                </p>
+
+                <Link
+                  href={`/development-plans/${plan.development_plan_id}`}
+                  className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+                >
+                  Open Plan
+                </Link>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
 
         {/* Verification History */}
 

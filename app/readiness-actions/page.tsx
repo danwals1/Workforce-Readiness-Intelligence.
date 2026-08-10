@@ -48,6 +48,12 @@ export default function ReadinessActionsPage() {
 
   const [actions, setActions] = useState<ReadinessAction[]>([]);
   const [message, setMessage] = useState("Loading readiness actions...");
+
+  const [creatingPlanKey, setCreatingPlanKey] =
+    useState<string | null>(null);
+
+  const [existingPlanByAction, setExistingPlanByAction] =
+    useState<Record<string, string>>({});
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
   const [search, setSearch] = useState("");
@@ -82,7 +88,62 @@ export default function ReadinessActionsPage() {
         return;
       }
 
-      setActions((data ?? []) as ReadinessAction[]);
+  const readinessActions =
+    (data ?? []) as ReadinessAction[];
+
+  setActions(readinessActions);
+
+  const actionKeys =
+    readinessActions
+      .map((item) => item.action_key)
+      .filter(Boolean);
+
+  if (actionKeys.length > 0) {
+    const {
+      data: planData,
+      error: planError,
+    } = await supabase
+      .from("development_plans")
+      .select("id, action_key, status")
+      .in("action_key", actionKeys)
+      .not(
+        "status",
+        "in",
+        '("completed","cancelled")'
+      );
+
+    if (planError) {
+      console.error(
+        "Existing development plans failed:",
+        planError
+      );
+    } else {
+      const planMap:
+        Record<string, string> = {};
+
+      (
+        (planData ?? []) as {
+          id: string;
+          action_key: string | null;
+          status: string;
+        }[]
+      ).forEach((plan) => {
+        if (
+          plan.action_key &&
+          !planMap[plan.action_key]
+        ) {
+          planMap[plan.action_key] =
+            plan.id;
+        }
+      });
+
+      setExistingPlanByAction(
+        planMap
+      );
+    }
+  } else {
+    setExistingPlanByAction({});
+  }
       setMessage("");
     }
 
@@ -225,6 +286,66 @@ export default function ReadinessActionsPage() {
     }
 
     return `/employees/${item.employee_id}`;
+  }
+
+  async function createDevelopmentPlan(
+    item: ReadinessAction
+  ) {
+    setCreatingPlanKey(item.action_key);
+    setMessage("");
+
+    let developmentType = "other";
+
+    if (
+      item.action_type === "PRACTICAL_VERIFICATION_NEEDED" ||
+      item.action_type === "PRACTICAL_DEVELOPMENT_NEEDED"
+    ) {
+      developmentType = "field_practice";
+    } else if (
+      item.action_type === "REVERIFICATION_DUE_SOON" ||
+      item.action_type === "REVERIFICATION_REQUIRED"
+    ) {
+      developmentType = "practical_verification";
+    } else if (
+      item.action_type === "SAFETY_GAP" ||
+      item.action_type === "CRITICAL_KNOWLEDGE_GAP" ||
+      item.action_type === "KNOWLEDGE_DEVELOPMENT"
+    ) {
+      developmentType = "training";
+    }
+
+    const { data, error } = await supabase.rpc(
+      "wri_create_development_plan_from_action",
+      {
+        p_action_key: item.action_key,
+        p_title: null,
+        p_description: null,
+        p_development_type: developmentType,
+        p_priority: null,
+        p_due_date: null,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      setCreatingPlanKey(null);
+      return;
+    }
+
+    if (!data) {
+      setMessage("Development plan was not created.");
+      setCreatingPlanKey(null);
+      return;
+    }
+
+    setExistingPlanByAction(
+      (current) => ({
+        ...current,
+        [item.action_key]: data as string,
+      })
+    );
+
+    router.push(`/development-plans/${data}`);
   }
 
   function actionButtonLabel(item: ReadinessAction) {
@@ -575,6 +696,32 @@ export default function ReadinessActionsPage() {
                     >
                       View Employee Profile
                     </Link>
+
+                    {existingPlanByAction[item.action_key] ? (
+                      <Link
+                        href={`/development-plans/${existingPlanByAction[item.action_key]}`}
+                        className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+                      >
+                        Open Development Plan
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          createDevelopmentPlan(item)
+                        }
+                        disabled={
+                          creatingPlanKey ===
+                          item.action_key
+                        }
+                        className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20 disabled:opacity-50"
+                      >
+                        {creatingPlanKey ===
+                        item.action_key
+                          ? "Creating..."
+                          : "Create Development Plan"}
+                      </button>
+                    )}
 
                     <Link
                       href={actionHref(item)}
