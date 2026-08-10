@@ -499,7 +499,12 @@ function formatDateTime(value: string | null) {
     );
   }
 
-  return (
+ const displayedProgressPercent =
+  plan.resolution_status === "resolved"
+    ? 100
+    : Number(plan.completion_percent);
+
+return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-7xl">
         <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -558,11 +563,16 @@ function formatDateTime(value: string | null) {
             <div className="w-full xl:max-w-sm">
               <div className="rounded-xl bg-slate-950/60 p-5">
                 <div className="flex items-end justify-between">
-                  <div><p className="text-sm text-slate-400">Progress</p><p className="mt-1 text-4xl font-bold">{plan.completion_percent}%</p></div>
-                  <p className="text-sm text-slate-400">{plan.activities_completed}/{plan.activities_total} complete</p>
+                  <div><p className="text-sm text-slate-400">Progress</p><p className="mt-1 text-4xl font-bold">{displayedProgressPercent}%</p></div>
+                 <p className="text-sm text-slate-400">
+  {plan.resolution_status === "resolved" &&
+  plan.activities_total === 0
+    ? "Resolved by verification"
+    : `${plan.activities_completed}/${plan.activities_total} complete`}
+</p>
                 </div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
-                  <div className="h-full rounded-full bg-cyan-400" style={{ width: `${Math.min(100, Math.max(0, Number(plan.completion_percent)))}%` }} />
+                  <div className="h-full rounded-full bg-cyan-400" style={{ width: `${Math.min(100, Math.max(0, Number(displayedProgressPercent)))}%` }} />
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-lg bg-slate-900 p-3"><p className="text-xs text-slate-500">Remaining</p><p className="mt-1 text-xl font-semibold">{remainingActivities}</p></div>
