@@ -514,6 +514,14 @@ export default function EmployeePage() {
     ).toLocaleString();
   }
 
+function displayedPlanProgress(
+  plan: DevelopmentPlanSummary
+) {
+  return plan.status === "completed"
+    ? 100
+    : Number(plan.completion_percent);
+}
+
   const uniqueVerifiedCompetencies =
     useMemo(
       () =>
@@ -700,17 +708,15 @@ export default function EmployeePage() {
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
                   <div
                     className="h-full rounded-full bg-cyan-400"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(
-                          0,
-                          Number(
-                            summary.readiness_percent
-                          )
-                        )
-                      )}%`,
-                    }}
+                   style={{
+  width: `${Math.min(
+    100,
+    Math.max(
+      0,
+      Number(summary.readiness_percent)
+    )
+  )}%`,
+}}
                   />
                 </div>
               </div>
@@ -891,7 +897,7 @@ export default function EmployeePage() {
                       </span>
 
                       <span className="font-semibold">
-                        {plan.completion_percent}%
+                        {displayedPlanProgress(plan)}%
                       </span>
                     </div>
 
@@ -903,7 +909,7 @@ export default function EmployeePage() {
                             100,
                             Math.max(
                               0,
-                              Number(plan.completion_percent)
+                              displayedPlanProgress(plan)
                             )
                           )}%`,
                         }}
@@ -911,9 +917,11 @@ export default function EmployeePage() {
                     </div>
 
                     <p className="mt-2 text-xs text-slate-500">
-                      {plan.activities_completed}/
-                      {plan.activities_total} activities complete
-                    </p>
+  {plan.status === "completed" &&
+  plan.activities_total === 0
+    ? "Resolved by verification"
+    : `${plan.activities_completed}/${plan.activities_total} activities complete`}
+</p>
                   </div>
                 </div>
               </div>
