@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -93,38 +94,19 @@ export default function VerifyPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Verify Employees
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-slate-400">
-              Review and verify practical competency performance
-              only for employees within your assigned verifier scope.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              ← Dashboard
-            </Link>
-
-            <Link
-              href="/assessments"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              Assessments
-            </Link>
-          </div>
-        </div>
+        <SystemHeader
+          title="Verify Employees"
+          subtitle="Review and verify practical competency performance only for employees within your assigned verifier scope."
+          showHome={true}
+          showSignOut={true}
+        >
+          <Link
+            href="/assessments"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+          >
+            Assessments
+          </Link>
+        </SystemHeader>
 
         {message && (
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
