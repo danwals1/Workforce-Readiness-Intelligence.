@@ -115,6 +115,16 @@ type PracticalEvidence = {
   resolved_at: string | null;
 };
 
+type EditPlanDraft = {
+  title: string;
+  description: string;
+  developmentType: string;
+  priority: string;
+  dueDate: string;
+  ownerUserId: string;
+  managerNotes: string;
+};
+
 export default function DevelopmentPlanPage() {
   const params = useParams();
   const router = useRouter();
@@ -133,6 +143,26 @@ const [practicalEvidence, setPracticalEvidence] =
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [addingActivity, setAddingActivity] = useState(false);
+
+  const [showEditPlan, setShowEditPlan] =
+    useState(false);
+
+  const [savingPlan, setSavingPlan] =
+    useState(false);
+
+  const [editOwners, setEditOwners] =
+    useState<PlanOwner[]>([]);
+
+  const [editDraft, setEditDraft] =
+    useState<EditPlanDraft>({
+      title: "",
+      description: "",
+      developmentType: "training",
+      priority: "medium",
+      dueDate: "",
+      ownerUserId: "",
+      managerNotes: "",
+    });
 
 const [startingReassessment, setStartingReassessment] =
 useState(false);
@@ -181,6 +211,137 @@ useState(false);
       ) ?? null;
 
     setPlanOwner(owner);
+  }
+
+  async function openEditPlan() {
+    if (!plan) {
+      return;
+    }
+
+    if (
+      plan.resolution_status === "resolved" ||
+      plan.resolution_status === "cancelled" ||
+      plan.status === "cancelled"
+    ) {
+      setMessage(
+        "Resolved or cancelled development plans are read-only."
+      );
+      return;
+    }
+
+    setMessage("");
+    setSuccessMessage("");
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_list_development_plan_owners",
+      {
+        p_employee_id: plan.employee_id,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setEditOwners(
+      (data ?? []) as PlanOwner[]
+    );
+
+    setEditDraft({
+      title: plan.title ?? "",
+      description: plan.description ?? "",
+      developmentType:
+        plan.development_type ?? "training",
+      priority: plan.priority ?? "medium",
+      dueDate: plan.due_date ?? "",
+      ownerUserId: plan.owner_user_id ?? "",
+      managerNotes: plan.manager_notes ?? "",
+    });
+
+    setShowEditPlan(true);
+  }
+
+  function cancelEditPlan() {
+    setShowEditPlan(false);
+    setMessage("");
+  }
+
+  async function savePlanChanges() {
+    if (!plan) {
+      return;
+    }
+
+    if (!editDraft.title.trim()) {
+      setMessage(
+        "Development plan title is required."
+      );
+      return;
+    }
+
+    setSavingPlan(true);
+    setMessage("");
+    setSuccessMessage("");
+
+    const { error } = await supabase.rpc(
+      "wri_update_development_plan",
+      {
+        p_development_plan_id:
+          plan.development_plan_id,
+
+        p_title:
+          editDraft.title.trim(),
+
+        p_description:
+          editDraft.description.trim()
+            ? editDraft.description.trim()
+            : null,
+
+        p_development_type:
+          editDraft.developmentType,
+
+        p_priority:
+          editDraft.priority,
+
+        p_due_date:
+          editDraft.dueDate || null,
+
+        p_owner_user_id:
+          editDraft.ownerUserId || null,
+
+        p_manager_notes:
+          editDraft.managerNotes.trim()
+            ? editDraft.managerNotes.trim()
+            : null,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      setSavingPlan(false);
+      return;
+    }
+
+    try {
+      await refreshWorkspace();
+
+      setShowEditPlan(false);
+
+      setSuccessMessage(
+        "Development plan updated."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Plan updated, but the page could not be refreshed."
+      );
+    } finally {
+      setSavingPlan(false);
+    }
   }
 
   async function loadPlan() {
@@ -604,6 +765,18 @@ return (
           >
             Employee Profile
           </Link>
+
+          {plan.resolution_status !== "resolved" &&
+            plan.resolution_status !== "cancelled" &&
+            plan.status !== "cancelled" && (
+              <button
+                type="button"
+                onClick={openEditPlan}
+                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+              >
+                Edit Plan
+              </button>
+            )}
         </SystemHeader>
 
         {message && (
@@ -611,6 +784,243 @@ return (
         )}
         {successMessage && (
           <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-sm text-emerald-200">{successMessage}</div>
+        )}
+
+        {showEditPlan && (
+          <section className="mb-6 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6 sm:p-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-cyan-300">
+                  Plan Management
+                </p>
+
+                <h2 className="mt-2 text-2xl font-semibold">
+                  Edit Development Plan
+                </h2>
+
+                <p className="mt-2 text-sm text-slate-400">
+                  Update ownership, timing, priority, and development instructions.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cancelEditPlan}
+                disabled={savingPlan}
+                className="w-fit rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-7 grid gap-5 lg:grid-cols-2">
+              <label className="text-sm text-slate-300 lg:col-span-2">
+                Plan Title
+
+                <input
+                  value={editDraft.title}
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+
+              <label className="text-sm text-slate-300 lg:col-span-2">
+                Description
+
+                <textarea
+                  value={editDraft.description}
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      description:
+                        event.target.value,
+                    }))
+                  }
+                  rows={4}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Development Type
+
+                <select
+                  value={
+                    editDraft.developmentType
+                  }
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      developmentType:
+                        event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="training">
+                    Training
+                  </option>
+                  <option value="coaching">
+                    Coaching
+                  </option>
+                  <option value="field_practice">
+                    Field Practice
+                  </option>
+                  <option value="practical_verification">
+                    Practical Verification
+                  </option>
+                  <option value="reassessment">
+                    Reassessment
+                  </option>
+                  <option value="mentoring">
+                    Mentoring
+                  </option>
+                  <option value="observation">
+                    Observation
+                  </option>
+                  <option value="other">
+                    Other
+                  </option>
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Priority
+
+                <select
+                  value={editDraft.priority}
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      priority:
+                        event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="critical">
+                    Critical
+                  </option>
+                  <option value="high">
+                    High
+                  </option>
+                  <option value="medium">
+                    Medium
+                  </option>
+                  <option value="low">
+                    Low
+                  </option>
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Due Date
+
+                <input
+                  type="date"
+                  value={editDraft.dueDate}
+                  min={plan.start_date ?? undefined}
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      dueDate:
+                        event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Plan Owner
+
+                <select
+                  value={
+                    editDraft.ownerUserId
+                  }
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      ownerUserId:
+                        event.target.value,
+                    }))
+                  }
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="">
+                    Unassigned
+                  </option>
+
+                  {editOwners.map((owner) => (
+                    <option
+                      key={owner.user_id}
+                      value={owner.user_id}
+                    >
+                      {owner.first_name}{" "}
+                      {owner.last_name}
+                      {" · "}
+                      {owner.role ===
+                      "CLIENT_ADMIN"
+                        ? "Client Admin"
+                        : owner.role ===
+                            "INTEGRATEU_ADMIN"
+                          ? "IntegrateU Admin"
+                          : owner.role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-300 lg:col-span-2">
+                Manager Notes
+
+                <textarea
+                  value={
+                    editDraft.managerNotes
+                  }
+                  onChange={(event) =>
+                    setEditDraft((current) => ({
+                      ...current,
+                      managerNotes:
+                        event.target.value,
+                    }))
+                  }
+                  rows={4}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={cancelEditPlan}
+                disabled={savingPlan}
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={savePlanChanges}
+                disabled={
+                  savingPlan ||
+                  !editDraft.title.trim()
+                }
+                className="rounded-lg bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingPlan
+                  ? "Saving..."
+                  : "Save Changes"}
+              </button>
+            </div>
+          </section>
         )}
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
