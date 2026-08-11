@@ -150,6 +150,12 @@ const [practicalEvidence, setPracticalEvidence] =
   const [savingPlan, setSavingPlan] =
     useState(false);
 
+  const [showCancelPlan, setShowCancelPlan] =
+    useState(false);
+
+  const [cancellingPlan, setCancellingPlan] =
+    useState(false);
+
   const [editOwners, setEditOwners] =
     useState<PlanOwner[]>([]);
 
@@ -268,6 +274,78 @@ useState(false);
   function cancelEditPlan() {
     setShowEditPlan(false);
     setMessage("");
+  }
+
+  function openCancelPlan() {
+    if (!plan) {
+      return;
+    }
+
+    if (
+      plan.resolution_status === "resolved" ||
+      plan.resolution_status === "cancelled" ||
+      plan.status === "cancelled"
+    ) {
+      setMessage(
+        "Resolved or cancelled development plans cannot be cancelled."
+      );
+      return;
+    }
+
+    setMessage("");
+    setSuccessMessage("");
+    setShowEditPlan(false);
+    setShowCancelPlan(true);
+  }
+
+  function closeCancelPlan() {
+    if (cancellingPlan) {
+      return;
+    }
+
+    setShowCancelPlan(false);
+  }
+
+  async function cancelDevelopmentPlan() {
+    if (!plan) {
+      return;
+    }
+
+    setCancellingPlan(true);
+    setMessage("");
+    setSuccessMessage("");
+
+    const { error } = await supabase.rpc(
+      "wri_cancel_development_plan",
+      {
+        p_development_plan_id:
+          plan.development_plan_id,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      setCancellingPlan(false);
+      return;
+    }
+
+    try {
+      await refreshWorkspace();
+
+      setShowCancelPlan(false);
+
+      setSuccessMessage(
+        "Development plan cancelled."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Plan cancelled, but the page could not be refreshed."
+      );
+    } finally {
+      setCancellingPlan(false);
+    }
   }
 
   async function savePlanChanges() {
@@ -769,13 +847,23 @@ return (
           {plan.resolution_status !== "resolved" &&
             plan.resolution_status !== "cancelled" &&
             plan.status !== "cancelled" && (
-              <button
-                type="button"
-                onClick={openEditPlan}
-                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-              >
-                Edit Plan
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={openEditPlan}
+                  className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                >
+                  Edit Plan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openCancelPlan}
+                  className="rounded-lg border border-rose-500/50 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 transition hover:bg-rose-500/20"
+                >
+                  Cancel Plan
+                </button>
+              </>
             )}
         </SystemHeader>
 
@@ -784,6 +872,54 @@ return (
         )}
         {successMessage && (
           <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-sm text-emerald-200">{successMessage}</div>
+        )}
+
+        {showCancelPlan && (
+          <section className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 sm:p-8">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
+                <p className="text-xs font-medium uppercase tracking-wide text-rose-300">
+                  Plan Lifecycle
+                </p>
+
+                <h2 className="mt-2 text-2xl font-semibold">
+                  Cancel Development Plan?
+                </h2>
+
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  Cancelling this plan ends the development workflow and makes
+                  the plan read-only. Existing activities and plan history will
+                  remain available for reference.
+                </p>
+
+                <p className="mt-3 text-sm font-medium text-rose-300">
+                  This action cannot currently be reversed in the Training System.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={closeCancelPlan}
+                  disabled={cancellingPlan}
+                  className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Keep Plan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={cancelDevelopmentPlan}
+                  disabled={cancellingPlan}
+                  className="rounded-lg bg-rose-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {cancellingPlan
+                    ? "Cancelling..."
+                    : "Confirm Cancellation"}
+                </button>
+              </div>
+            </div>
+          </section>
         )}
 
         {showEditPlan && (
@@ -1399,7 +1535,9 @@ Next Required Action
                 <h2 className="text-2xl font-semibold">Development Activities</h2>
                 <p className="mt-1 text-sm text-slate-400">Track the work required to close this readiness gap.</p>
               </div>
-              {plan.resolution_status !== "resolved" && (
+              {plan.resolution_status !== "resolved" &&
+                plan.resolution_status !== "cancelled" &&
+                plan.status !== "cancelled" && (
                 <button
                   type="button"
                   onClick={() =>
@@ -1417,7 +1555,9 @@ Next Required Action
             </div>
 
             {showAddActivity &&
-              plan.resolution_status !== "resolved" && (
+              plan.resolution_status !== "resolved" &&
+              plan.resolution_status !== "cancelled" &&
+              plan.status !== "cancelled" && (
               <div className="mb-5 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5">
                 <h3 className="font-semibold">New Development Activity</h3>
                 <div className="mt-5 grid gap-4">
@@ -1464,7 +1604,9 @@ Next Required Action
                       </div>
                       <select value={activity.status} disabled={
                           savingActivityId === activity.id ||
-                          plan.resolution_status === "resolved"
+                          plan.resolution_status === "resolved" ||
+                          plan.resolution_status === "cancelled" ||
+                          plan.status === "cancelled"
                         } onChange={(event) => updateActivityStatus(activity.id, event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-50">
                         <option value="not_started">Not Started</option><option value="in_progress">In Progress</option><option value="blocked">Blocked</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option>
                       </select>
