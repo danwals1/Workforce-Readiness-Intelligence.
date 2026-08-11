@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type Employee = {
@@ -393,12 +394,6 @@ export default function EmployeePage() {
     loadEmployee();
   }, [employeeId, router]);
 
-  async function logout() {
-    await supabase.auth.signOut();
-
-    router.push("/");
-  }
-
   function statusLabel(
     status: string
   ) {
@@ -584,50 +579,21 @@ const uniqueVerifiedCompetencies =
 
         {/* Header */}
 
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Employee Readiness Profile
-            </h1>
-
-            <p className="mt-2 text-slate-400">
-              Assessment performance,
-              competency readiness, and
-              practical verification
-              history.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
+        <SystemHeader
+          title="Employee Readiness Profile"
+          subtitle="Assessment performance, competency readiness, and practical verification history."
+          showHome={true}
+          showSignOut={true}
+        >
+          {!isOwnProfile && canVerify && (
             <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+              href={`/employees/${employee.id}/practical-verification`}
+              className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
             >
-              ← Dashboard
+              Practical Verification
             </Link>
-
-            {!isOwnProfile &&
-              canVerify && (
-                <Link
-                  href={`/employees/${employee.id}/practical-verification`}
-                  className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                >
-                  Practical Verification
-                </Link>
-              )}
-
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
+          )}
+        </SystemHeader>
 
         {/* Employee */}
 
