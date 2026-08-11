@@ -66,6 +66,16 @@ type DevelopmentActivity = {
   updated_at: string;
 };
 
+type PlanOwner = {
+  user_id: string;
+  employee_id: string | null;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+  role: string;
+  client_id: string | null;
+};
+
 type NewActivityDraft = {
   title: string;
   description: string;
@@ -111,6 +121,8 @@ export default function DevelopmentPlanPage() {
   const planId = params.id as string;
 
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null);
+  const [planOwner, setPlanOwner] =
+    useState<PlanOwner | null>(null);
   const [activities, setActivities] = useState<DevelopmentActivity[]>([]);
 const [resolutionEvidence, setResolutionEvidence] =
   useState<ResolutionEvidence | null>(null);
@@ -131,6 +143,46 @@ useState(false);
     dueDate: "",
   });
 
+  async function loadPlanOwner(
+    employeeId: string,
+    ownerUserId: string | null
+  ) {
+    if (!ownerUserId) {
+      setPlanOwner(null);
+      return;
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_list_development_plan_owners",
+      {
+        p_employee_id: employeeId,
+      }
+    );
+
+    if (error) {
+      console.error(
+        "Unable to load development plan owner:",
+        error
+      );
+      setPlanOwner(null);
+      return;
+    }
+
+    const owners =
+      (data ?? []) as PlanOwner[];
+
+    const owner =
+      owners.find(
+        (row) =>
+          row.user_id === ownerUserId
+      ) ?? null;
+
+    setPlanOwner(owner);
+  }
+
   async function loadPlan() {
     const { data, error } = await supabase
       .from("v_development_plan_resolution")
@@ -140,7 +192,15 @@ useState(false);
 
     if (error) throw error;
     if (!data) throw new Error("Development plan not found or access denied.");
-    setPlan(data as DevelopmentPlan);
+    const loadedPlan =
+      data as DevelopmentPlan;
+
+    setPlan(loadedPlan);
+
+    await loadPlanOwner(
+      loadedPlan.employee_id,
+      loadedPlan.owner_user_id
+    );
   }
 
   async function loadActivities() {
@@ -1012,6 +1072,40 @@ Next Required Action
               {plan.competency_name_snapshot && <p className="mt-2 text-sm text-slate-400">{plan.competency_name_snapshot}</p>}
               <p className="mt-4 text-xs text-slate-500">Readiness Action Queue</p>
             </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Plan Owner
+              </p>
+
+              {plan.owner_user_id ? (
+                planOwner ? (
+                  <>
+                    <p className="mt-3 font-semibold">
+                      {planOwner.first_name}{" "}
+                      {planOwner.last_name}
+                    </p>
+
+                    <p className="mt-2 text-sm text-slate-400">
+                      {planOwner.role === "CLIENT_ADMIN"
+                        ? "Client Admin"
+                        : planOwner.role ===
+                            "INTEGRATEU_ADMIN"
+                          ? "IntegrateU Admin"
+                          : planOwner.role}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-400">
+                    Assigned owner
+                  </p>
+                )
+              ) : (
+                <p className="mt-3 text-sm text-slate-400">
+                  No owner assigned
+                </p>
+              )}
+            </div>
+
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Development Type</p>
               <p className="mt-2 font-semibold">{typeLabel(plan.development_type)}</p>

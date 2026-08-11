@@ -63,6 +63,16 @@ type EmployeeOption = {
   employee_number: string | null;
 };
 
+type PlanOwnerOption = {
+  user_id: string;
+  employee_id: string;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+  role: string;
+  client_id: string | null;
+};
+
 type ResolutionFilter =
   | "all"
   | "open"
@@ -81,6 +91,7 @@ type PriorityFilter =
 
 type NewPlanDraft = {
   employeeId: string;
+  ownerUserId: string;
   title: string;
   description: string;
   developmentType: string;
@@ -97,6 +108,9 @@ export default function DevelopmentPlansCenterPage() {
 
   const [employees, setEmployees] =
     useState<EmployeeOption[]>([]);
+
+  const [owners, setOwners] =
+    useState<PlanOwnerOption[]>([]);
 
   const [message, setMessage] =
     useState("Loading development plans...");
@@ -122,6 +136,7 @@ export default function DevelopmentPlansCenterPage() {
   const [draft, setDraft] =
     useState<NewPlanDraft>({
       employeeId: "",
+      ownerUserId: "",
       title: "",
       description: "",
       developmentType: "training",
@@ -186,6 +201,54 @@ export default function DevelopmentPlansCenterPage() {
     }));
   }
 
+  async function loadOwners(
+    employeeId: string
+  ) {
+    if (!employeeId) {
+      setOwners([]);
+
+      setDraft((current) => ({
+        ...current,
+        ownerUserId: "",
+      }));
+
+      return;
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_list_development_plan_owners",
+      {
+        p_employee_id: employeeId,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      setOwners([]);
+      return;
+    }
+
+    const rows =
+      (data ?? []) as PlanOwnerOption[];
+
+    setOwners(rows);
+
+    setDraft((current) => ({
+      ...current,
+      ownerUserId:
+        rows.some(
+          (owner) =>
+            owner.user_id ===
+            current.ownerUserId
+        )
+          ? current.ownerUserId
+          : rows[0]?.user_id || "",
+    }));
+  }
+
   useEffect(() => {
     async function loadPage() {
       const {
@@ -213,6 +276,15 @@ export default function DevelopmentPlansCenterPage() {
 
     loadPage();
   }, [router]);
+
+  useEffect(() => {
+    if (!draft.employeeId) {
+      setOwners([]);
+      return;
+    }
+
+    loadOwners(draft.employeeId);
+  }, [draft.employeeId]);
 
   async function createPlan() {
     if (!draft.employeeId) {
@@ -245,7 +317,8 @@ export default function DevelopmentPlansCenterPage() {
           draft.priority,
         p_due_date:
           draft.dueDate || null,
-        p_owner_user_id: null,
+        p_owner_user_id:
+          draft.ownerUserId || null,
         p_manager_notes:
           draft.managerNotes.trim() || null,
       }
@@ -519,6 +592,7 @@ const counts = useMemo(() => {
                       ...current,
                       employeeId:
                         event.target.value,
+                      ownerUserId: "",
                     }))
                   }
                   className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
@@ -539,6 +613,52 @@ const counts = useMemo(() => {
                         : ""}
                     </option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Plan Owner
+                </label>
+
+                <select
+                  value={draft.ownerUserId}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      ownerUserId:
+                        event.target.value,
+                    }))
+                  }
+                  disabled={
+                    !draft.employeeId ||
+                    owners.length === 0
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {owners.length === 0 ? (
+                    <option value="">
+                      No eligible owner
+                    </option>
+                  ) : (
+                    owners.map((owner) => (
+                      <option
+                        key={owner.user_id}
+                        value={owner.user_id}
+                      >
+                        {owner.first_name}{" "}
+                        {owner.last_name} (
+                        {owner.role ===
+                        "CLIENT_ADMIN"
+                          ? "Client Admin"
+                          : owner.role ===
+                              "INTEGRATEU_ADMIN"
+                            ? "IntegrateU Admin"
+                            : owner.role}
+                        )
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
