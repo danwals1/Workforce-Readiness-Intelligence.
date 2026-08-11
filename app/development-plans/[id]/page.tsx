@@ -296,6 +296,15 @@ router.push(
   }
 
   async function addActivity() {
+    if (
+      plan?.resolution_status === "resolved"
+    ) {
+      setMessage(
+        "Resolved development plans are read-only."
+      );
+      return;
+    }
+
     if (!draft.title.trim()) {
       setMessage("Activity title is required.");
       return;
@@ -337,6 +346,15 @@ router.push(
   }
 
   async function updateActivityStatus(activityId: string, status: string) {
+    if (
+      plan?.resolution_status === "resolved"
+    ) {
+      setMessage(
+        "Resolved development plans are read-only."
+      );
+      return;
+    }
+
     setSavingActivityId(activityId);
     setMessage("");
     setSuccessMessage("");
@@ -911,12 +929,25 @@ Next Required Action
                 <h2 className="text-2xl font-semibold">Development Activities</h2>
                 <p className="mt-1 text-sm text-slate-400">Track the work required to close this readiness gap.</p>
               </div>
-              <button type="button" onClick={() => setShowAddActivity((current) => !current)} className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
-                {showAddActivity ? "Cancel" : "Add Activity"}
-              </button>
+              {plan.resolution_status !== "resolved" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowAddActivity(
+                      (current) => !current
+                    )
+                  }
+                  className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                >
+                  {showAddActivity
+                    ? "Cancel"
+                    : "Add Activity"}
+                </button>
+              )}
             </div>
 
-            {showAddActivity && (
+            {showAddActivity &&
+              plan.resolution_status !== "resolved" && (
               <div className="mb-5 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5">
                 <h3 className="font-semibold">New Development Activity</h3>
                 <div className="mt-5 grid gap-4">
@@ -961,7 +992,10 @@ Next Required Action
                         {activity.description && <p className="mt-2 text-sm leading-6 text-slate-400">{activity.description}</p>}
                         {activity.due_date && <p className="mt-3 text-xs text-slate-500">Due {formatDate(activity.due_date)}</p>}
                       </div>
-                      <select value={activity.status} disabled={savingActivityId === activity.id} onChange={(event) => updateActivityStatus(activity.id, event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-50">
+                      <select value={activity.status} disabled={
+                          savingActivityId === activity.id ||
+                          plan.resolution_status === "resolved"
+                        } onChange={(event) => updateActivityStatus(activity.id, event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-50">
                         <option value="not_started">Not Started</option><option value="in_progress">In Progress</option><option value="blocked">Blocked</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option>
                       </select>
                     </div>
