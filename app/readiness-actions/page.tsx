@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type ReadinessAction = {
@@ -370,41 +371,19 @@ export default function ReadinessActionsPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">IntegrateU</p>
-            <h1 className="mt-2 text-3xl font-semibold">
-              Readiness Action Center
-            </h1>
-            <p className="mt-2 max-w-2xl text-slate-400">
-              Prioritized workforce readiness issues that need management,
-              development, verification, or reverification action.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              ← Dashboard
-            </Link>
-
-            <Link
-              href="/verify"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              Verify Employees
-            </Link>
-
-            <button
-              onClick={logout}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
+        <SystemHeader
+          title="Readiness Action Center"
+          subtitle="Prioritized workforce readiness issues that need management, development, verification, or reverification action."
+          showHome={true}
+          showSignOut={true}
+        >
+          <Link
+            href="/verify"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+          >
+            Verify Employees
+          </Link>
+        </SystemHeader>
 
         {message && (
           <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
