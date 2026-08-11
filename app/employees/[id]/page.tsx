@@ -566,7 +566,7 @@ const uniqueVerifiedCompetencies =
             href="/dashboard"
             className="mt-6 inline-block text-cyan-400 hover:text-cyan-300"
           >
-            ← Back to Dashboard
+            ← Training System Home
           </Link>
         </div>
       </main>

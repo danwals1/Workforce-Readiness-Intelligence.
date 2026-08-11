@@ -490,10 +490,10 @@ function formatDateTime(value: string | null) {
             {message}
           </div>
           <Link
-            href="/readiness-actions"
+            href="/dashboard"
             className="mt-6 inline-block text-cyan-400 hover:text-cyan-300"
           >
-            ← Readiness Actions
+            ← Training System Home
           </Link>
         </div>
       </main>
