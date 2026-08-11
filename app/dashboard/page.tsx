@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -29,12 +29,20 @@ type EmployeeWithReadiness = Employee & {
   readiness: Readiness | null;
 };
 
+type VerificationAssignment = {
+  employee_id: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [employees, setEmployees] = useState<EmployeeWithReadiness[]>([]);
   const [message, setMessage] = useState("Loading...");
   const [isIntegrateAdmin, setIsIntegrateAdmin] = useState(false);
+  const [isClientAdmin, setIsClientAdmin] = useState(false);
+  const [verificationAssignments, setVerificationAssignments] = useState<
+    VerificationAssignment[]
+  >([]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -43,7 +51,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadDashboard() {
-      const { data: sessionData } = await supabase.auth.getSession();
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        setMessage(sessionError.message);
+        return;
+      }
 
       if (!sessionData.session) {
         router.push("/");
@@ -69,15 +85,43 @@ export default function DashboardPage() {
       }
 
       const integrateAdmin =
-        roles?.some((role) => role.role === "INTEGRATEU_ADMIN") ?? false;
-
-      setIsIntegrateAdmin(integrateAdmin);
+        roles?.some(
+          (role) => role.role === "INTEGRATEU_ADMIN"
+        ) ?? false;
 
       const clientIds =
         roles
-          ?.filter((role) => role.role === "CLIENT_ADMIN")
+          ?.filter(
+            (role) => role.role === "CLIENT_ADMIN"
+          )
           .map((role) => role.client_id)
-          .filter((clientId): clientId is string => Boolean(clientId)) ?? [];
+          .filter(
+            (clientId): clientId is string =>
+              Boolean(clientId)
+          ) ?? [];
+
+      const clientAdmin = clientIds.length > 0;
+
+      setIsIntegrateAdmin(integrateAdmin);
+      setIsClientAdmin(clientAdmin);
+
+      const {
+        data: verifierData,
+        error: verifierError,
+      } = await supabase.rpc(
+        "wri_list_my_verification_employees"
+      );
+
+      if (verifierError) {
+        console.error(
+          "Unable to load verifier assignments:",
+          verifierError
+        );
+      } else {
+        setVerificationAssignments(
+          (verifierData ?? []) as VerificationAssignment[]
+        );
+      }
 
       let employeeQuery = supabase
         .from("employees")
@@ -93,28 +137,43 @@ export default function DashboardPage() {
       if (integrateAdmin) {
         // IntegrateU admins can see all employees allowed by RLS.
       } else if (clientIds.length > 0) {
-        employeeQuery = employeeQuery.in("client_id", clientIds);
+        employeeQuery = employeeQuery.in(
+          "client_id",
+          clientIds
+        );
       } else {
-        employeeQuery = employeeQuery.eq("auth_user_id", userId);
+        employeeQuery = employeeQuery.eq(
+          "auth_user_id",
+          userId
+        );
       }
 
       const {
         data: employeeData,
         error: employeeError,
-      } = await employeeQuery.order("last_name", { ascending: true });
+      } = await employeeQuery.order(
+        "last_name",
+        { ascending: true }
+      );
 
       if (employeeError) {
         setMessage(employeeError.message);
         return;
       }
 
-      if (!employeeData || employeeData.length === 0) {
+      if (
+        !employeeData ||
+        employeeData.length === 0
+      ) {
         setEmployees([]);
-        setMessage("No team members have been added to this client yet.");
+        setMessage("");
         return;
       }
 
-      const employeeIds = employeeData.map((employee) => employee.id);
+      const employeeIds =
+        employeeData.map(
+          (employee) => employee.id
+        );
 
       const {
         data: readinessData,
@@ -131,33 +190,39 @@ export default function DashboardPage() {
           competencies_total,
           created_at
         `)
-        .in("employee_id", employeeIds)
-        .order("created_at", { ascending: false });
+        .in(
+          "employee_id",
+          employeeIds
+        )
+        .order(
+          "created_at",
+          { ascending: false }
+        );
 
       if (readinessError) {
         setMessage(readinessError.message);
         return;
       }
 
-      /*
-        role_readiness can contain historical rows.
-        Because the query is newest-first, find() returns
-        the latest readiness record for each employee.
-      */
-      const combined: EmployeeWithReadiness[] = employeeData.map(
-        (employee) => ({
-          id: employee.id,
-          first_name: employee.first_name,
-          last_name: employee.last_name,
-          employee_number: employee.employee_number,
-          client_id: employee.client_id,
-          auth_user_id: employee.auth_user_id,
-          readiness:
-            readinessData?.find(
-              (row) => row.employee_id === employee.id
-            ) ?? null,
-        })
-      );
+      const combined: EmployeeWithReadiness[] =
+        employeeData.map(
+          (employee) => ({
+            id: employee.id,
+            first_name: employee.first_name,
+            last_name: employee.last_name,
+            employee_number:
+              employee.employee_number,
+            client_id: employee.client_id,
+            auth_user_id:
+              employee.auth_user_id,
+            readiness:
+              readinessData?.find(
+                (row) =>
+                  row.employee_id ===
+                  employee.id
+              ) ?? null,
+          })
+        );
 
       setEmployees(combined);
       setMessage("");
@@ -166,153 +231,547 @@ export default function DashboardPage() {
     loadDashboard();
   }, [router]);
 
+  const canManageOrganization =
+    isIntegrateAdmin || isClientAdmin;
+
+  const canVerify =
+    verificationAssignments.length > 0;
+
+  const isIndividualUser =
+    !canManageOrganization;
+
+  const primaryEmployee =
+    employees.length === 1
+      ? employees[0]
+      : null;
+
+  const averageReadiness = useMemo(() => {
+    const readinessRows =
+      employees
+        .map(
+          (employee) =>
+            employee.readiness
+        )
+        .filter(
+          (
+            readiness
+          ): readiness is Readiness =>
+            readiness !== null
+        );
+
+    if (readinessRows.length === 0) {
+      return null;
+    }
+
+    const total =
+      readinessRows.reduce(
+        (sum, readiness) =>
+          sum +
+          Number(
+            readiness.readiness_percent
+          ),
+        0
+      );
+
+    return (
+      total /
+      readinessRows.length
+    );
+  }, [employees]);
+
+  const readyEmployees =
+    employees.filter(
+      (employee) =>
+        employee.readiness?.status
+          ?.toUpperCase() === "READY"
+    ).length;
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-sm font-medium text-cyan-400">
               IntegrateU
             </p>
 
-            <h1 className="mt-2 text-3xl font-semibold">
-              Role Readiness
+            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
+              IntegrateU Training System
             </h1>
 
-            <p className="mt-2 text-slate-400">
-              Team overview
+            <p className="mt-3 max-w-2xl text-slate-400">
+              Your central hub for workforce readiness,
+              assessments, development, and practical
+              verification.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-  {isIntegrateAdmin && (
-    <Link
-      href="/admin/library"
-      className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
-    >
-      IntegrateU Admin → Master Library
-    </Link>
-  )}
-
-  <Link
-    href="/assessments"
-    className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
-  >
-    Assessments
-  </Link>
-
-  <Link
-    href="/readiness-actions"
-    className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
-  >
-    Readiness Actions
-  </Link>
-
-  <button
-    onClick={handleLogout}
-    className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-  >
-    Sign Out
-  </button>
-</div>
-        </div>
+          <button
+            onClick={handleLogout}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+          >
+            Sign Out
+          </button>
+        </header>
 
         {message && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
+          <div className="mb-8 rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
             {message}
           </div>
         )}
 
-        {employees.length > 0 && (
-          <div className="grid gap-6 md:grid-cols-2">
-            {employees.map((employee) => (
-              <Link
-                key={employee.id}
-                href={`/employees/${employee.id}`}
+        <section>
+          <div className="mb-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              System Home
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold">
+              Training & Readiness
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-400">
+              Access the core training and workforce-readiness
+              tools available to you.
+            </p>
+          </div>
+
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {isIndividualUser &&
+              primaryEmployee && (
+                <Link
+                  href={`/employees/${primaryEmployee.id}`}
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+                >
+                  <p className="text-sm font-medium text-cyan-400">
+                    My Readiness
+                  </p>
+
+                  <h3 className="mt-2 text-xl font-semibold">
+                    Readiness Profile
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Review your readiness, competency gaps,
+                    development plans, and verification history.
+                  </p>
+
+                  <p className="mt-5 text-sm font-medium text-cyan-400">
+                    Open My Profile →
+                  </p>
+                </Link>
+              )}
+
+            {canManageOrganization && (
+              <a
+                href="#team-readiness"
                 className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
               >
-                <p className="text-sm text-slate-400">
-                  Employee
+                <p className="text-sm font-medium text-cyan-400">
+                  Team Readiness
                 </p>
 
-                <h2 className="mt-1 text-2xl font-semibold">
-                  {employee.first_name} {employee.last_name}
+                <h3 className="mt-2 text-xl font-semibold">
+                  Workforce Readiness
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Review employee readiness levels,
+                  competency progress, and workforce gaps.
+                </p>
+
+                <p className="mt-5 text-sm font-medium text-cyan-400">
+                  View Team Readiness ↓
+                </p>
+              </a>
+            )}
+
+            <Link
+              href="/assessments"
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+            >
+              <p className="text-sm font-medium text-cyan-400">
+                Assessments
+              </p>
+
+              <h3 className="mt-2 text-xl font-semibold">
+                Assessment Center
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Access role-based assessments, attempts,
+                and assessment results.
+              </p>
+
+              <p className="mt-5 text-sm font-medium text-cyan-400">
+                Open Assessments →
+              </p>
+            </Link>
+
+            {canManageOrganization && (
+              <Link
+                href="/readiness-actions"
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+              >
+                <p className="text-sm font-medium text-cyan-400">
+                  Readiness Actions
+                </p>
+
+                <h3 className="mt-2 text-xl font-semibold">
+                  Gap Resolution
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Review readiness gaps and launch the
+                  development, reassessment, or verification
+                  work needed to close them.
+                </p>
+
+                <p className="mt-5 text-sm font-medium text-cyan-400">
+                  Open Readiness Actions →
+                </p>
+              </Link>
+            )}
+
+            {canVerify && (
+              <Link
+                href="/verify"
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+              >
+                <p className="text-sm font-medium text-cyan-400">
+                  Practical Verification
+                </p>
+
+                <h3 className="mt-2 text-xl font-semibold">
+                  Verification Workspace
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Review employees assigned to you and record
+                  practical competency verification.
+                </p>
+
+                <p className="mt-5 text-sm font-medium text-cyan-400">
+                  Open Verification →
+                </p>
+              </Link>
+            )}
+          </div>
+        </section>
+
+        {(isIntegrateAdmin ||
+          isClientAdmin) && (
+          <section className="mt-12">
+            <div className="mb-5">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Administration
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold">
+                System Administration
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Manage the configuration and permissions
+                that support the IntegrateU Training System.
+              </p>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <Link
+                href="/admin/verifiers"
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+              >
+                <p className="text-sm font-medium text-cyan-400">
+                  Verifier Management
+                </p>
+
+                <h3 className="mt-2 text-xl font-semibold">
+                  Practical Verifiers
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Assign and manage practical-verification
+                  access for your organization.
+                </p>
+
+                <p className="mt-5 text-sm font-medium text-cyan-400">
+                  Manage Verifiers →
+                </p>
+              </Link>
+
+              {isIntegrateAdmin && (
+                <Link
+                  href="/admin/library"
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+                >
+                  <p className="text-sm font-medium text-cyan-400">
+                    Master Library
+                  </p>
+
+                  <h3 className="mt-2 text-xl font-semibold">
+                    Training System Library
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Manage industries, competencies, role
+                    templates, and assessment templates.
+                  </p>
+
+                  <p className="mt-5 text-sm font-medium text-cyan-400">
+                    Open Master Library →
+                  </p>
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
+
+        {canManageOrganization && (
+          <section
+            id="team-readiness"
+            className="mt-12"
+          >
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Workforce Readiness
+                </p>
+
+                <h2 className="mt-2 text-2xl font-semibold">
+                  Team Readiness
                 </h2>
 
-                {employee.employee_number && (
-                  <p className="mt-2 text-sm text-slate-400">
-                    {employee.employee_number}
+                <p className="mt-2 text-sm text-slate-400">
+                  Current readiness overview for your
+                  accessible employees.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+                  <p className="text-xs text-slate-500">
+                    Employees
                   </p>
+
+                  <p className="mt-1 text-xl font-semibold">
+                    {employees.length}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+                  <p className="text-xs text-slate-500">
+                    Ready
+                  </p>
+
+                  <p className="mt-1 text-xl font-semibold">
+                    {readyEmployees}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+                  <p className="text-xs text-slate-500">
+                    Avg. Readiness
+                  </p>
+
+                  <p className="mt-1 text-xl font-semibold">
+                    {averageReadiness !== null
+                      ? `${averageReadiness.toFixed(1)}%`
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {employees.length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+                No team members are currently available.
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2">
+                {employees.map(
+                  (employee) => (
+                    <Link
+                      key={employee.id}
+                      href={`/employees/${employee.id}`}
+                      className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+                    >
+                      <p className="text-sm text-slate-400">
+                        Employee
+                      </p>
+
+                      <h3 className="mt-1 text-2xl font-semibold">
+                        {employee.first_name}{" "}
+                        {employee.last_name}
+                      </h3>
+
+                      {employee.employee_number && (
+                        <p className="mt-2 text-sm text-slate-400">
+                          {employee.employee_number}
+                        </p>
+                      )}
+
+                      {employee.readiness ? (
+                        <div className="mt-6">
+                          <div className="flex items-end justify-between gap-4">
+                            <div>
+                              <p className="text-sm text-slate-400">
+                                Readiness
+                              </p>
+
+                              <p className="mt-1 text-4xl font-bold">
+                                {
+                                  employee
+                                    .readiness
+                                    .readiness_percent
+                                }
+                                %
+                              </p>
+                            </div>
+
+                            <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300">
+                              {
+                                employee
+                                  .readiness
+                                  .status
+                              }
+                            </span>
+                          </div>
+
+                          <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800">
+                            <div
+                              className="h-full rounded-full bg-cyan-400"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.max(
+                                    0,
+                                    Number(
+                                      employee
+                                        .readiness
+                                        .readiness_percent
+                                    )
+                                  )
+                                )}%`,
+                              }}
+                            />
+                          </div>
+
+                          <div className="mt-6 grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-sm text-slate-400">
+                                Requirements
+                              </p>
+
+                              <p className="text-lg font-semibold">
+                                {
+                                  employee
+                                    .readiness
+                                    .requirements_met
+                                }
+                                /
+                                {
+                                  employee
+                                    .readiness
+                                    .requirements_total
+                                }
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-sm text-slate-400">
+                                Competencies
+                              </p>
+
+                              <p className="text-lg font-semibold">
+                                {
+                                  employee
+                                    .readiness
+                                    .competencies_met
+                                }
+                                /
+                                {
+                                  employee
+                                    .readiness
+                                    .competencies_total
+                                }
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                          <p className="text-sm text-slate-400">
+                            No readiness assessment available yet.
+                          </p>
+                        </div>
+                      )}
+                    </Link>
+                  )
                 )}
+              </div>
+            )}
+          </section>
+        )}
 
-                {employee.readiness ? (
-                  <div className="mt-6">
-                    <div className="flex items-end justify-between gap-4">
-                      <div>
-                        <p className="text-sm text-slate-400">
-                          Readiness
-                        </p>
+        {isIndividualUser &&
+          primaryEmployee &&
+          primaryEmployee.readiness && (
+            <section className="mt-12">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  My Current Readiness
+                </p>
 
-                        <p className="mt-1 text-4xl font-bold">
-                          {employee.readiness.readiness_percent}%
-                        </p>
-                      </div>
+                <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-semibold">
+                      {primaryEmployee.first_name}{" "}
+                      {primaryEmployee.last_name}
+                    </h2>
 
-                      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm text-emerald-300">
-                        {employee.readiness.status}
-                      </span>
-                    </div>
-
-                    <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800">
-                      <div
-                        className="h-full rounded-full bg-cyan-400"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(
-                              0,
-                              employee.readiness.readiness_percent
-                            )
-                          )}%`,
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-slate-400">
-                          Requirements
-                        </p>
-
-                        <p className="text-lg font-semibold">
-                          {employee.readiness.requirements_met}/
-                          {employee.readiness.requirements_total}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-slate-400">
-                          Competencies
-                        </p>
-
-                        <p className="text-lg font-semibold">
-                          {employee.readiness.competencies_met}/
-                          {employee.readiness.competencies_total}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                    <p className="text-sm text-slate-400">
-                      No readiness assessment available yet.
+                    <p className="mt-2 text-sm text-slate-400">
+                      Current role readiness
                     </p>
                   </div>
-                )}
-              </Link>
-            ))}
-          </div>
-        )}
+
+                  <p className="text-5xl font-bold">
+                    {
+                      primaryEmployee.readiness
+                        .readiness_percent
+                    }
+                    %
+                  </p>
+                </div>
+
+                <div className="mt-6 h-3 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-cyan-400"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          Number(
+                            primaryEmployee
+                              .readiness
+                              .readiness_percent
+                          )
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+
+                <Link
+                  href={`/employees/${primaryEmployee.id}`}
+                  className="mt-6 inline-block rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+                >
+                  View My Readiness Profile
+                </Link>
+              </div>
+            </section>
+          )}
       </div>
     </main>
   );
