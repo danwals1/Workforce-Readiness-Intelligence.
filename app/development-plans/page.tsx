@@ -1272,25 +1272,27 @@ const counts = useMemo(() => {
                             : ""}
                         </p>
 
-                        {plan.owner_user_id && (
-                          <p className="mt-1 text-sm text-slate-400">
-                            Owner:{" "}
-                            {(() => {
-                              const owner =
-                                planOwnerOptions.find(
-                                  (option) =>
-                                    option.user_id ===
-                                    plan.owner_user_id
-                                );
+                        <p className="mt-1 text-sm text-slate-400">
+                          Owner:{" "}
+                          {(() => {
+                            if (!plan.owner_user_id) {
+                              return "Unassigned";
+                            }
 
-                              if (!owner) {
-                                return "Assigned";
-                              }
+                            const owner =
+                              planOwnerOptions.find(
+                                (option) =>
+                                  option.user_id ===
+                                  plan.owner_user_id
+                              );
 
-                              return `${owner.first_name} ${owner.last_name}`;
-                            })()}
-                          </p>
-                        )}
+                            if (!owner) {
+                              return "Assigned";
+                            }
+
+                            return `${owner.first_name} ${owner.last_name}`;
+                          })()}
+                        </p>
 
                         {plan.role_name_snapshot && (
                           <p className="mt-1 text-sm text-slate-400">
