@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type Attempt = {
@@ -535,20 +536,14 @@ export default function AssessmentResultsPage() {
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-10">
-          <p className="text-sm font-medium text-cyan-400">
-            IntegrateU Assessment Results
-          </p>
-
-          <h1 className="mt-2 text-3xl font-semibold">
-            {assessment.name}
-          </h1>
-
-          <p className="mt-2 text-slate-400">
-            {employee.first_name}{" "}
-            {employee.last_name}
-          </p>
-        </div>
+        <SystemHeader
+          title={assessment.name}
+          subtitle={`${employee.first_name} ${employee.last_name}`}
+          backHref="/assessments"
+          backLabel="Assessments"
+          showHome={true}
+          showSignOut={true}
+        />
 
         {message && (
           <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
@@ -839,27 +834,6 @@ export default function AssessmentResultsPage() {
           </div>
         </section>
 
-        <div className="mt-10 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() =>
-              router.push("/assessments")
-            }
-            className="rounded-lg bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"
-          >
-            Back to Assessments
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              router.push("/dashboard")
-            }
-            className="rounded-lg border border-slate-700 px-5 py-3 font-medium text-slate-300 transition hover:bg-slate-800"
-          >
-            Dashboard
-          </button>
-        </div>
       </div>
     </main>
   );
