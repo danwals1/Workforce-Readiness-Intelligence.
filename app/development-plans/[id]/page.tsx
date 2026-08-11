@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type DevelopmentPlan = {
@@ -507,28 +508,25 @@ function formatDateTime(value: string | null) {
 return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">IntegrateU</p>
-            <h1 className="mt-2 text-3xl font-semibold">Development Plan</h1>
-            <p className="mt-2 text-slate-400">
-              {plan.first_name} {plan.last_name}
-              {plan.employee_number ? ` · ${plan.employee_number}` : ""}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link href="/readiness-actions" className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800">
-              ← Readiness Actions
-            </Link>
-            <Link href={`/employees/${plan.employee_id}`} className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800">
-              Employee Profile
-            </Link>
-            <button onClick={logout} className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800">
-              Sign Out
-            </button>
-          </div>
-        </div>
+        <SystemHeader
+          title="Development Plan"
+          subtitle={`${plan.first_name} ${plan.last_name}${
+            plan.employee_number
+              ? ` · ${plan.employee_number}`
+              : ""
+          }`}
+          backHref="/readiness-actions"
+          backLabel="Readiness Actions"
+          showHome={true}
+          showSignOut={true}
+        >
+          <Link
+            href={`/employees/${plan.employee_id}`}
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+          >
+            Employee Profile
+          </Link>
+        </SystemHeader>
 
         {message && (
           <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">{message}</div>
