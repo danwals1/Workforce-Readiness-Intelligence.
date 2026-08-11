@@ -563,11 +563,17 @@ return (
             <div className="w-full xl:max-w-sm">
               <div className="rounded-xl bg-slate-950/60 p-5">
                 <div className="flex items-end justify-between">
-                  <div><p className="text-sm text-slate-400">Progress</p><p className="mt-1 text-4xl font-bold">{displayedProgressPercent}%</p></div>
+                  <div><p className="text-sm text-slate-400">Progress</p><p className="mt-1 text-4xl font-bold">{plan.resolution_status === "awaiting_verification" &&
+plan.activities_total === 0
+  ? "Awaiting Verification"
+  : `${displayedProgressPercent}%`}</p></div>
                  <p className="text-sm text-slate-400">
   {plan.resolution_status === "resolved" &&
-  plan.activities_total === 0
-    ? "Resolved by verification"
+plan.activities_total === 0
+  ? "Resolved by verification"
+  : plan.resolution_status === "awaiting_verification" &&
+    plan.activities_total === 0
+    ? "Development requirements complete"
     : `${plan.activities_completed}/${plan.activities_total} complete`}
 </p>
                 </div>
