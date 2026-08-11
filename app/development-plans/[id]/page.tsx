@@ -717,7 +717,7 @@ router.push(
     }
 
     if (status === "cancelled") {
-      return "bg-slate-700 text-slate-300";
+      return "bg-slate-200 text-slate-700";
     }
 
     return "bg-cyan-500/15 text-cyan-300";
