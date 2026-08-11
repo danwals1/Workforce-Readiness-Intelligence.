@@ -56,6 +56,13 @@ type DevelopmentPlanResolution = {
   resolution_label: string;
 };
 
+type EmployeeOption = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+};
+
 type ResolutionFilter =
   | "all"
   | "open"
@@ -72,14 +79,30 @@ type PriorityFilter =
   | "medium"
   | "low";
 
+type NewPlanDraft = {
+  employeeId: string;
+  title: string;
+  description: string;
+  developmentType: string;
+  priority: string;
+  dueDate: string;
+  managerNotes: string;
+};
+
 export default function DevelopmentPlansCenterPage() {
   const router = useRouter();
 
   const [plans, setPlans] =
     useState<DevelopmentPlanResolution[]>([]);
 
+  const [employees, setEmployees] =
+    useState<EmployeeOption[]>([]);
+
   const [message, setMessage] =
     useState("Loading development plans...");
+
+  const [successMessage, setSuccessMessage] =
+    useState("");
 
   const [search, setSearch] =
     useState("");
@@ -90,8 +113,81 @@ export default function DevelopmentPlansCenterPage() {
   const [priorityFilter, setPriorityFilter] =
     useState<PriorityFilter>("all");
 
+  const [showCreatePlan, setShowCreatePlan] =
+    useState(false);
+
+  const [creatingPlan, setCreatingPlan] =
+    useState(false);
+
+  const [draft, setDraft] =
+    useState<NewPlanDraft>({
+      employeeId: "",
+      title: "",
+      description: "",
+      developmentType: "training",
+      priority: "medium",
+      dueDate: "",
+      managerNotes: "",
+    });
+
+  async function loadPlans() {
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_list_development_plan_resolutions",
+      {
+        p_employee_id: null,
+        p_resolution_status: null,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setPlans(
+      (data ?? []) as DevelopmentPlanResolution[]
+    );
+  }
+
+  async function loadEmployees() {
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("employees")
+      .select(`
+        id,
+        first_name,
+        last_name,
+        employee_number
+      `)
+      .order("last_name", { ascending: true })
+      .order("first_name", { ascending: true });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    const rows =
+      (data ?? []) as EmployeeOption[];
+
+    setEmployees(rows);
+
+    setDraft((current) => ({
+      ...current,
+      employeeId:
+        current.employeeId ||
+        rows[0]?.id ||
+        "",
+    }));
+  }
+
   useEffect(() => {
-    async function loadPlans() {
+    async function loadPage() {
       const {
         data: sessionData,
         error: sessionError,
@@ -107,33 +203,80 @@ export default function DevelopmentPlansCenterPage() {
         return;
       }
 
-      const {
-        data,
-        error,
-      } = await supabase.rpc(
-        "wri_list_development_plan_resolutions",
-        {
-          p_employee_id: null,
-          p_resolution_status: null,
-        }
-      );
-
-      if (error) {
-        setMessage(error.message);
-        return;
-      }
-
-      setPlans(
-        (data ?? []) as DevelopmentPlanResolution[]
-      );
+      await Promise.all([
+        loadPlans(),
+        loadEmployees(),
+      ]);
 
       setMessage("");
     }
 
-    loadPlans();
+    loadPage();
   }, [router]);
 
-  const counts = useMemo(() => {
+  async function createPlan() {
+    if (!draft.employeeId) {
+      setMessage("Employee is required.");
+      return;
+    }
+
+    if (!draft.title.trim()) {
+      setMessage("Development plan title is required.");
+      return;
+    }
+
+    setCreatingPlan(true);
+    setMessage("");
+    setSuccessMessage("");
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_create_manual_development_plan",
+      {
+        p_employee_id: draft.employeeId,
+        p_title: draft.title.trim(),
+        p_description:
+          draft.description.trim() || null,
+        p_development_type:
+          draft.developmentType,
+        p_priority:
+          draft.priority,
+        p_due_date:
+          draft.dueDate || null,
+        p_owner_user_id: null,
+        p_manager_notes:
+          draft.managerNotes.trim() || null,
+      }
+    );
+
+    if (error) {
+      setMessage(error.message);
+      setCreatingPlan(false);
+      return;
+    }
+
+    if (!data) {
+      setMessage(
+        "The development plan could not be created."
+      );
+      setCreatingPlan(false);
+      return;
+    }
+
+    setSuccessMessage(
+      "Development plan created."
+    );
+
+    setCreatingPlan(false);
+
+    router.push(
+      `/development-plans/${data}`
+    );
+  }
+
+const counts = useMemo(() => {
     const openPlans =
       plans.filter(
         (plan) =>
@@ -318,12 +461,262 @@ export default function DevelopmentPlansCenterPage() {
           >
             Readiness Actions
           </Link>
+
+          <button
+            type="button"
+            onClick={() =>
+              setShowCreatePlan(
+                (current) => !current
+              )
+            }
+            className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+          >
+            {showCreatePlan
+              ? "Cancel"
+              : "Create Development Plan"}
+          </button>
         </SystemHeader>
 
         {message && (
           <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
             {message}
           </div>
+        )}
+
+
+        {successMessage && (
+          <div className="mb-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-emerald-200">
+            {successMessage}
+          </div>
+        )}
+
+        {showCreatePlan && (
+          <section className="mb-8 rounded-2xl border border-cyan-500/30 bg-slate-900 p-6 sm:p-8">
+            <div className="mb-6">
+              <p className="text-sm font-medium text-cyan-400">
+                New Development Plan
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold">
+                Create Development Plan
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Create manager-assigned development work that is not tied to a specific readiness action.
+              </p>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Employee
+                </label>
+
+                <select
+                  value={draft.employeeId}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      employeeId:
+                        event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+                >
+                  <option value="">
+                    Select employee
+                  </option>
+
+                  {employees.map((employee) => (
+                    <option
+                      key={employee.id}
+                      value={employee.id}
+                    >
+                      {employee.first_name}{" "}
+                      {employee.last_name}
+                      {employee.employee_number
+                        ? ` · ${employee.employee_number}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Title
+                </label>
+
+                <input
+                  value={draft.title}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  placeholder="Example: Networking Skill Development"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder:text-slate-600"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Development Type
+                </label>
+
+                <select
+                  value={draft.developmentType}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      developmentType:
+                        event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+                >
+                  <option value="training">
+                    Training
+                  </option>
+                  <option value="coaching">
+                    Coaching
+                  </option>
+                  <option value="field_practice">
+                    Field Practice
+                  </option>
+                  <option value="mentoring">
+                    Mentoring
+                  </option>
+                  <option value="observation">
+                    Observation
+                  </option>
+                  <option value="practical_verification">
+                    Practical Verification
+                  </option>
+                  <option value="reassessment">
+                    Reassessment
+                  </option>
+                  <option value="other">
+                    Other
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Priority
+                </label>
+
+                <select
+                  value={draft.priority}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      priority:
+                        event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+                >
+                  <option value="critical">
+                    Critical
+                  </option>
+                  <option value="high">
+                    High
+                  </option>
+                  <option value="medium">
+                    Medium
+                  </option>
+                  <option value="low">
+                    Low
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm text-slate-300">
+                  Due Date
+                </label>
+
+                <input
+                  type="date"
+                  value={draft.dueDate}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      dueDate:
+                        event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm text-slate-300">
+                  Description
+                </label>
+
+                <textarea
+                  rows={4}
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      description:
+                        event.target.value,
+                    }))
+                  }
+                  placeholder="Describe the development objective and expected outcome."
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder:text-slate-600"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm text-slate-300">
+                  Manager Notes
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={draft.managerNotes}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      managerNotes:
+                        event.target.value,
+                    }))
+                  }
+                  placeholder="Optional internal notes."
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setShowCreatePlan(false)
+                }
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={createPlan}
+                disabled={creatingPlan}
+                className="rounded-lg bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingPlan
+                  ? "Creating..."
+                  : "Create Development Plan"}
+              </button>
+            </div>
+          </section>
         )}
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
