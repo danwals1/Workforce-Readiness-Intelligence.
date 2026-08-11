@@ -433,6 +433,30 @@ export default function DashboardPage() {
               </Link>
             )}
 
+            {canManageOrganization && (
+              <Link
+                href="/development-plans"
+                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+              >
+                <p className="text-sm font-medium text-cyan-400">
+                  Development Plans
+                </p>
+
+                <h3 className="mt-2 text-xl font-semibold">
+                  Development Center
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Track employee development work from
+                  readiness gap through final resolution.
+                </p>
+
+                <p className="mt-5 text-sm font-medium text-cyan-400">
+                  Open Development Plans →
+                </p>
+              </Link>
+            )}
+
             {canVerify && (
               <Link
                 href="/verify"
