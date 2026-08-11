@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type Employee = {
@@ -870,49 +871,25 @@ export default function PracticalVerificationPage() {
 
         {/* Header */}
 
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Practical Verification
-            </h1>
-
-            <p className="mt-2 text-slate-400">
-              {employee.first_name}{" "}
-              {employee.last_name}
-
-              {employee.employee_number
-                ? ` · ${employee.employee_number}`
-                : ""}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href={`/employees/${employee.id}`}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              ← Employee Profile
-            </Link>
-
-            <Link
-              href="/verify"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              Verify Employees
-            </Link>
-
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              Dashboard
-            </Link>
-          </div>
-        </div>
+        <SystemHeader
+          title="Practical Verification"
+          subtitle={`${employee.first_name} ${employee.last_name}${
+            employee.employee_number
+              ? ` · ${employee.employee_number}`
+              : ""
+          }`}
+          backHref={`/employees/${employee.id}`}
+          backLabel="Employee Profile"
+          showHome={true}
+          showSignOut={true}
+        >
+          <Link
+            href="/verify"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+          >
+            Verify Employees
+          </Link>
+        </SystemHeader>
 
         {message && (
           <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">
