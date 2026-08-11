@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -385,41 +386,21 @@ export default function ManageVerifiersPage() {
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-6xl">
 
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Manage Practical Verifiers
-            </h1>
-
-            <p className="mt-2 max-w-2xl text-slate-400">
-              Give supervisors, trainers, lead technicians, or
-              instructors practical-verification authority without
-              granting full company-admin access.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
+        <SystemHeader
+          title="Manage Practical Verifiers"
+          subtitle="Give supervisors, trainers, lead technicians, or instructors practical-verification authority without granting full company-admin access."
+          showHome={true}
+          showSignOut={true}
+        >
+          {isIntegrateAdmin && (
             <Link
-              href="/dashboard"
+              href="/admin/library"
               className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
             >
-              ← Dashboard
+              Master Library
             </Link>
-
-            {isIntegrateAdmin && (
-              <Link
-                href="/admin/library"
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-              >
-                Master Library
-              </Link>
-            )}
-          </div>
-        </div>
+          )}
+        </SystemHeader>
 
         {message && (
           <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">
