@@ -91,6 +91,12 @@ type ResolutionFilter =
   | "awaiting_reverification"
   | "resolved";
 
+type AttentionFilter =
+  | "all"
+  | "due_soon"
+  | "overdue"
+  | "blocked";
+
 type PriorityFilter =
   | "all"
   | "critical"
@@ -144,6 +150,9 @@ export default function DevelopmentPlansCenterPage() {
 
   const [priorityFilter, setPriorityFilter] =
     useState<PriorityFilter>("all");
+
+  const [attentionFilter, setAttentionFilter] =
+    useState<AttentionFilter>("all");
 
   const [showCreatePlan, setShowCreatePlan] =
     useState(false);
@@ -441,6 +450,49 @@ export default function DevelopmentPlansCenterPage() {
     );
   }
 
+  function isOpenPlan(
+    plan: DevelopmentPlanResolution
+  ) {
+    return ![
+      "resolved",
+      "cancelled",
+    ].includes(plan.resolution_status);
+  }
+
+  function isDueSoon(
+    plan: DevelopmentPlanResolution
+  ) {
+    if (
+      !plan.due_date ||
+      plan.overdue ||
+      !isOpenPlan(plan)
+    ) {
+      return false;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const dueDate = new Date(
+      `${plan.due_date}T12:00:00`
+    );
+    dueDate.setHours(0, 0, 0, 0);
+
+    const differenceMs =
+      dueDate.getTime() - today.getTime();
+
+    const differenceDays =
+      Math.round(
+        differenceMs /
+          (1000 * 60 * 60 * 24)
+      );
+
+    return (
+      differenceDays >= 0 &&
+      differenceDays <= 7
+    );
+  }
+
 const counts = useMemo(() => {
     const openPlans =
       plans.filter(
@@ -464,10 +516,20 @@ const counts = useMemo(() => {
       plans.filter(
         (plan) =>
           plan.overdue &&
-          plan.resolution_status !==
-            "resolved" &&
-          plan.resolution_status !==
-            "cancelled"
+          isOpenPlan(plan)
+      ).length;
+
+    const dueSoon =
+      plans.filter(
+        (plan) =>
+          isDueSoon(plan)
+      ).length;
+
+    const blocked =
+      plans.filter(
+        (plan) =>
+          Number(plan.activities_blocked) > 0 &&
+          isOpenPlan(plan)
       ).length;
 
     const resolved =
@@ -481,6 +543,8 @@ const counts = useMemo(() => {
       openPlans,
       awaitingVerification,
       overdue,
+      dueSoon,
+      blocked,
       resolved,
     };
   }, [plans]);
@@ -532,6 +596,33 @@ const counts = useMemo(() => {
       }
 
       if (
+        attentionFilter === "due_soon" &&
+        !isDueSoon(plan)
+      ) {
+        return false;
+      }
+
+      if (
+        attentionFilter === "overdue" &&
+        !(
+          plan.overdue &&
+          isOpenPlan(plan)
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        attentionFilter === "blocked" &&
+        !(
+          Number(plan.activities_blocked) > 0 &&
+          isOpenPlan(plan)
+        )
+      ) {
+        return false;
+      }
+
+      if (
         resolutionFilter === "open"
       ) {
         return ![
@@ -559,6 +650,7 @@ const counts = useMemo(() => {
     resolutionFilter,
     ownerFilter,
     currentUserId,
+    attentionFilter,
   ]);
 
   function formatDate(
@@ -955,11 +1047,9 @@ const counts = useMemo(() => {
           />
 
           <MetricCard
-            label="Awaiting Verification"
-            value={
-              counts.awaitingVerification
-            }
-            valueClass="text-cyan-300"
+            label="Due Soon"
+            value={counts.dueSoon}
+            valueClass="text-amber-300"
           />
 
           <MetricCard
@@ -969,9 +1059,9 @@ const counts = useMemo(() => {
           />
 
           <MetricCard
-            label="Resolved"
-            value={counts.resolved}
-            valueClass="text-emerald-300"
+            label="Blocked"
+            value={counts.blocked}
+            valueClass="text-rose-300"
           />
         </section>
 
@@ -1001,6 +1091,67 @@ const counts = useMemo(() => {
               </span>{" "}
               plans
             </p>
+          </div>
+
+          <div className="mt-5">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+              Attention
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <FilterButton
+                active={
+                  attentionFilter === "all"
+                }
+                onClick={() =>
+                  setAttentionFilter("all")
+                }
+              >
+                All
+              </FilterButton>
+
+              <FilterButton
+                active={
+                  attentionFilter ===
+                  "due_soon"
+                }
+                onClick={() =>
+                  setAttentionFilter(
+                    "due_soon"
+                  )
+                }
+              >
+                Due Soon ({counts.dueSoon})
+              </FilterButton>
+
+              <FilterButton
+                active={
+                  attentionFilter ===
+                  "overdue"
+                }
+                onClick={() =>
+                  setAttentionFilter(
+                    "overdue"
+                  )
+                }
+              >
+                Overdue ({counts.overdue})
+              </FilterButton>
+
+              <FilterButton
+                active={
+                  attentionFilter ===
+                  "blocked"
+                }
+                onClick={() =>
+                  setAttentionFilter(
+                    "blocked"
+                  )
+                }
+              >
+                Blocked ({counts.blocked})
+              </FilterButton>
+            </div>
           </div>
 
           <div className="mt-5">
@@ -1258,6 +1409,21 @@ const counts = useMemo(() => {
                                 Overdue
                               </span>
                             )}
+
+                          {Number(
+                            plan.activities_blocked
+                          ) > 0 &&
+                            isOpenPlan(plan) && (
+                              <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
+                                Blocked
+                              </span>
+                            )}
+
+                          {isDueSoon(plan) && (
+                            <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-300">
+                              Due Soon
+                            </span>
+                          )}
                         </div>
 
                         <h2 className="mt-4 text-xl font-semibold">
