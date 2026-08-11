@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type Employee = {
@@ -334,41 +335,12 @@ searchParams.get("plan");
 
         {/* Header */}
 
-        <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
-
-            <h1 className="mt-2 text-3xl font-semibold">
-              Assessments
-            </h1>
-
-            <p className="mt-2 text-slate-400">
-              Measure your current knowledge
-              and identify development
-              opportunities.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
-            >
-              ← Dashboard
-            </Link>
-
-            <button
-              onClick={
-                handleLogout
-              }
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
+        <SystemHeader
+          title="Assessments"
+          subtitle="Measure your current knowledge and identify development opportunities."
+          showHome={true}
+          showSignOut={true}
+        />
 
         {/* Message */}
 
