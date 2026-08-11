@@ -32,6 +32,8 @@ type DevelopmentPlanResolution = {
   due_date: string | null;
   completed_at: string | null;
 
+  owner_user_id: string | null;
+
   activities_total: number;
   activities_completed: number;
   activities_blocked: number;
@@ -71,6 +73,13 @@ type PlanOwnerOption = {
   employee_number: string | null;
   role: string;
   client_id: string | null;
+};
+
+type DevelopmentPlanOwnerFilterOption = {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  role: string;
 };
 
 type ResolutionFilter =
@@ -121,6 +130,15 @@ export default function DevelopmentPlansCenterPage() {
   const [search, setSearch] =
     useState("");
 
+  const [currentUserId, setCurrentUserId] =
+    useState("");
+
+  const [ownerFilter, setOwnerFilter] =
+    useState("all");
+
+  const [planOwnerOptions, setPlanOwnerOptions] =
+    useState<DevelopmentPlanOwnerFilterOption[]>([]);
+
   const [resolutionFilter, setResolutionFilter] =
     useState<ResolutionFilter>("open");
 
@@ -162,9 +180,12 @@ export default function DevelopmentPlansCenterPage() {
       return;
     }
 
-    setPlans(
-      (data ?? []) as DevelopmentPlanResolution[]
-    );
+    const planRows =
+      (data ?? []) as DevelopmentPlanResolution[];
+
+    setPlans(planRows);
+
+    await loadPlanOwnerOptions(planRows);
   }
 
   async function loadEmployees() {
@@ -199,6 +220,73 @@ export default function DevelopmentPlansCenterPage() {
         rows[0]?.id ||
         "",
     }));
+  }
+
+  async function loadPlanOwnerOptions(
+    planRows: DevelopmentPlanResolution[]
+  ) {
+    const employeeIds = Array.from(
+      new Set(
+        planRows
+          .filter((plan) => plan.owner_user_id)
+          .map((plan) => plan.employee_id)
+      )
+    );
+
+    if (employeeIds.length === 0) {
+      setPlanOwnerOptions([]);
+      return;
+    }
+
+    const results = await Promise.all(
+      employeeIds.map(async (employeeId) => {
+        const { data, error } =
+          await supabase.rpc(
+            "wri_list_development_plan_owners",
+            {
+              p_employee_id: employeeId,
+            }
+          );
+
+        if (error) {
+          console.error(
+            "Unable to load plan owners:",
+            error
+          );
+          return [];
+        }
+
+        return (
+          (data ?? []) as PlanOwnerOption[]
+        );
+      })
+    );
+
+    const uniqueOwners =
+      new Map<
+        string,
+        DevelopmentPlanOwnerFilterOption
+      >();
+
+    results.flat().forEach((owner) => {
+      if (!uniqueOwners.has(owner.user_id)) {
+        uniqueOwners.set(owner.user_id, {
+          user_id: owner.user_id,
+          first_name: owner.first_name,
+          last_name: owner.last_name,
+          role: owner.role,
+        });
+      }
+    });
+
+    setPlanOwnerOptions(
+      Array.from(uniqueOwners.values()).sort(
+        (a, b) =>
+          `${a.last_name} ${a.first_name}`.localeCompare(
+            `${b.last_name} ${b.first_name}`
+          )
+      )
+    );
   }
 
   async function loadOwners(
@@ -265,6 +353,10 @@ export default function DevelopmentPlansCenterPage() {
         router.push("/");
         return;
       }
+
+      setCurrentUserId(
+        sessionData.session.user.id
+      );
 
       await Promise.all([
         loadPlans(),
@@ -425,6 +517,21 @@ const counts = useMemo(() => {
       }
 
       if (
+        ownerFilter === "mine" &&
+        plan.owner_user_id !== currentUserId
+      ) {
+        return false;
+      }
+
+      if (
+        ownerFilter !== "all" &&
+        ownerFilter !== "mine" &&
+        plan.owner_user_id !== ownerFilter
+      ) {
+        return false;
+      }
+
+      if (
         resolutionFilter === "open"
       ) {
         return ![
@@ -450,6 +557,8 @@ const counts = useMemo(() => {
     search,
     priorityFilter,
     resolutionFilter,
+    ownerFilter,
+    currentUserId,
   ]);
 
   function formatDate(
@@ -1002,6 +1111,68 @@ const counts = useMemo(() => {
 
           <div className="mt-5">
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+              Owner
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <FilterButton
+                active={ownerFilter === "all"}
+                onClick={() =>
+                  setOwnerFilter("all")
+                }
+              >
+                All Owners
+              </FilterButton>
+
+              <FilterButton
+                active={ownerFilter === "mine"}
+                onClick={() =>
+                  setOwnerFilter("mine")
+                }
+              >
+                My Plans
+              </FilterButton>
+
+              <select
+                value={
+                  ownerFilter === "all" ||
+                  ownerFilter === "mine"
+                    ? ""
+                    : ownerFilter
+                }
+                onChange={(event) =>
+                  setOwnerFilter(
+                    event.target.value || "all"
+                  )
+                }
+                className="rounded-lg border border-slate-700 bg-slate-950 px-4 py-2 text-sm text-slate-300 outline-none transition focus:border-cyan-400"
+              >
+                <option value="">
+                  Select Owner
+                </option>
+
+                {planOwnerOptions.map((owner) => (
+                  <option
+                    key={owner.user_id}
+                    value={owner.user_id}
+                  >
+                    {owner.first_name}{" "}
+                    {owner.last_name}
+                    {" · "}
+                    {owner.role === "CLIENT_ADMIN"
+                      ? "Client Admin"
+                      : owner.role ===
+                          "INTEGRATEU_ADMIN"
+                        ? "IntegrateU Admin"
+                        : owner.role}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
               Priority
             </p>
 
@@ -1100,6 +1271,26 @@ const counts = useMemo(() => {
                             ? ` · ${plan.employee_number}`
                             : ""}
                         </p>
+
+                        {plan.owner_user_id && (
+                          <p className="mt-1 text-sm text-slate-400">
+                            Owner:{" "}
+                            {(() => {
+                              const owner =
+                                planOwnerOptions.find(
+                                  (option) =>
+                                    option.user_id ===
+                                    plan.owner_user_id
+                                );
+
+                              if (!owner) {
+                                return "Assigned";
+                              }
+
+                              return `${owner.first_name} ${owner.last_name}`;
+                            })()}
+                          </p>
+                        )}
 
                         {plan.role_name_snapshot && (
                           <p className="mt-1 text-sm text-slate-400">
