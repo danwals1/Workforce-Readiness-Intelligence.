@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SystemHeader from "@/components/SystemHeader";
@@ -14,101 +14,674 @@ type TestEmployee = {
   auth_user_id: string | null;
 };
 
+type DevelopmentPlan = {
+  id: string;
+  employee_id: string;
+  title: string;
+  status: string;
+  resolution_status: string | null;
+  action_type: string | null;
+  action_key: string | null;
+  master_competency_template_id: string | null;
+  development_completed_at: string | null;
+  awaiting_evidence_since: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+};
+
+type DevelopmentActivity = {
+  id: string;
+  development_plan_id: string;
+  title: string;
+  status: string;
+  completed_at: string | null;
+};
+
+type ReadinessAction = {
+  action_key: string;
+  employee_id: string;
+  master_competency_template_id: string | null;
+  action_type: string;
+  action_label: string;
+};
+
+type RegressionStatus = "pass" | "fail" | "info";
+
+type RegressionCheck = {
+  id: string;
+  name: string;
+  description: string;
+  status: RegressionStatus;
+  detail: string;
+};
+
+type EmployeeSummary = {
+  employee: TestEmployee;
+  planCount: number;
+  activePlanCount: number;
+  awaitingEvidenceCount: number;
+  resolvedPlanCount: number;
+  readinessActionCount: number;
+};
+
+const waitingStatuses = [
+  "awaiting_reassessment",
+  "awaiting_verification",
+  "awaiting_reverification",
+];
+
+const allowedResolutionStatuses = [
+  "development_in_progress",
+  "awaiting_reassessment",
+  "awaiting_verification",
+  "awaiting_reverification",
+  "resolved",
+  "cancelled",
+];
+
 export default function SystemTestingPage() {
   const router = useRouter();
 
   const [employees, setEmployees] =
     useState<TestEmployee[]>([]);
 
+  const [plans, setPlans] =
+    useState<DevelopmentPlan[]>([]);
+
+  const [activities, setActivities] =
+    useState<DevelopmentActivity[]>([]);
+
+  const [readinessActions, setReadinessActions] =
+    useState<ReadinessAction[]>([]);
+
   const [message, setMessage] =
     useState("Loading testing workspace...");
 
-  useEffect(() => {
-    async function loadPage() {
-      const {
-        data: sessionData,
-        error: sessionError,
-      } = await supabase.auth.getSession();
+  const [loading, setLoading] =
+    useState(true);
 
-      if (sessionError) {
-        setMessage(sessionError.message);
-        return;
-      }
+  const [lastLoadedAt, setLastLoadedAt] =
+    useState<Date | null>(null);
 
-      if (!sessionData.session) {
-        router.push("/");
-        return;
-      }
+  const loadPage = useCallback(async () => {
+    setLoading(true);
+    setMessage("Loading testing workspace...");
 
-      const userId =
-        sessionData.session.user.id;
+    const {
+      data: sessionData,
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-      const {
-        data: roles,
-        error: rolesError,
-      } = await supabase
-        .from("user_client_roles")
-        .select("role, status")
-        .eq("user_id", userId)
-        .eq("status", "active");
+    if (sessionError) {
+      setMessage(sessionError.message);
+      setLoading(false);
+      return;
+    }
 
-      if (rolesError) {
-        setMessage(rolesError.message);
-        return;
-      }
+    if (!sessionData.session) {
+      router.push("/");
+      return;
+    }
 
-      const isIntegrateAdmin =
-        roles?.some(
-          (row) =>
-            row.role === "INTEGRATEU_ADMIN"
-        ) ?? false;
+    const userId =
+      sessionData.session.user.id;
 
-      if (!isIntegrateAdmin) {
-        router.push("/dashboard");
-        return;
-      }
+    const {
+      data: roles,
+      error: rolesError,
+    } = await supabase
+      .from("user_client_roles")
+      .select("role, status")
+      .eq("user_id", userId)
+      .eq("status", "active");
 
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("employees")
+    if (rolesError) {
+      setMessage(rolesError.message);
+      setLoading(false);
+      return;
+    }
+
+    const isIntegrateAdmin =
+      roles?.some(
+        (row) =>
+          row.role === "INTEGRATEU_ADMIN"
+      ) ?? false;
+
+    if (!isIntegrateAdmin) {
+      router.push("/dashboard");
+      return;
+    }
+
+    const {
+      data: employeeData,
+      error: employeeError,
+    } = await supabase
+      .from("employees")
+      .select(`
+        id,
+        first_name,
+        last_name,
+        employee_number,
+        auth_user_id
+      `)
+      .ilike(
+        "employee_number",
+        "%TEST%"
+      )
+      .order("last_name", {
+        ascending: true,
+      });
+
+    if (employeeError) {
+      setMessage(employeeError.message);
+      setLoading(false);
+      return;
+    }
+
+    const nextEmployees =
+      (employeeData ?? []) as TestEmployee[];
+
+    setEmployees(nextEmployees);
+
+    if (nextEmployees.length === 0) {
+      setPlans([]);
+      setActivities([]);
+      setReadinessActions([]);
+      setMessage("");
+      setLastLoadedAt(new Date());
+      setLoading(false);
+      return;
+    }
+
+    const employeeIds =
+      nextEmployees.map(
+        (employee) => employee.id
+      );
+
+    const [
+      plansResult,
+      readinessResult,
+    ] = await Promise.all([
+      supabase
+        .from("development_plans")
         .select(`
           id,
-          first_name,
-          last_name,
-          employee_number,
-          auth_user_id
+          employee_id,
+          title,
+          status,
+          resolution_status,
+          action_type,
+          action_key,
+          master_competency_template_id,
+          development_completed_at,
+          awaiting_evidence_since,
+          resolved_at,
+          resolution_notes
         `)
-        .ilike(
-          "employee_number",
-          "%TEST%"
+        .in("employee_id", employeeIds)
+        .order("created_at", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("v_readiness_action_queue")
+        .select(`
+          action_key,
+          employee_id,
+          master_competency_template_id,
+          action_type,
+          action_label
+        `)
+        .in("employee_id", employeeIds),
+    ]);
+
+    if (plansResult.error) {
+      setMessage(plansResult.error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (readinessResult.error) {
+      setMessage(readinessResult.error.message);
+      setLoading(false);
+      return;
+    }
+
+    const nextPlans =
+      (plansResult.data ?? []) as DevelopmentPlan[];
+
+    setPlans(nextPlans);
+
+    const planIds =
+      nextPlans.map(
+        (plan) => plan.id
+      );
+
+    if (planIds.length > 0) {
+      const {
+        data: activityData,
+        error: activityError,
+      } = await supabase
+        .from("development_plan_activities")
+        .select(`
+          id,
+          development_plan_id,
+          title,
+          status,
+          completed_at
+        `)
+        .in(
+          "development_plan_id",
+          planIds
         )
-        .order("last_name", {
+        .order("created_at", {
           ascending: true,
         });
 
-      if (error) {
-        setMessage(error.message);
+      if (activityError) {
+        setMessage(activityError.message);
+        setLoading(false);
         return;
       }
 
-      setEmployees(
-        (data ?? []) as TestEmployee[]
+      setActivities(
+        (activityData ?? []) as DevelopmentActivity[]
       );
-
-      setMessage("");
+    } else {
+      setActivities([]);
     }
 
-    loadPage();
+    setReadinessActions(
+      (readinessResult.data ?? []) as ReadinessAction[]
+    );
+
+    setMessage("");
+    setLastLoadedAt(new Date());
+    setLoading(false);
   }, [router]);
+
+  useEffect(() => {
+    loadPage();
+  }, [loadPage]);
+
+  const checks = useMemo<RegressionCheck[]>(() => {
+    const nextChecks: RegressionCheck[] = [];
+
+    const invalidResolutionPlans =
+      plans.filter(
+        (plan) =>
+          !plan.resolution_status ||
+          !allowedResolutionStatuses.includes(
+            plan.resolution_status
+          )
+      );
+
+    nextChecks.push({
+      id: "resolution-status-values",
+      name: "Resolution Status Integrity",
+      description:
+        "Every Development Plan should use one of the supported lifecycle resolution states.",
+      status:
+        invalidResolutionPlans.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        invalidResolutionPlans.length === 0
+          ? `${plans.length} plans use supported resolution states.`
+          : `${invalidResolutionPlans.length} plan(s) contain an unsupported or missing resolution status.`,
+    });
+
+    const brokenCancelledPlans =
+      plans.filter(
+        (plan) =>
+          plan.status === "cancelled" &&
+          plan.resolution_status !== "cancelled"
+      );
+
+    nextChecks.push({
+      id: "cancelled-plan-state",
+      name: "Cancellation Lifecycle",
+      description:
+        "Cancelled Development Plans must remain in the cancelled resolution state.",
+      status:
+        brokenCancelledPlans.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        brokenCancelledPlans.length === 0
+          ? "Cancelled plans are lifecycle-consistent."
+          : `${brokenCancelledPlans.length} cancelled plan(s) have an inconsistent resolution state.`,
+    });
+
+    const brokenResolvedPlans =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status === "resolved" &&
+          (
+            plan.resolved_at === null ||
+            plan.awaiting_evidence_since !== null
+          )
+      );
+
+    nextChecks.push({
+      id: "resolved-plan-state",
+      name: "Resolved Plan Integrity",
+      description:
+        "Resolved plans must have a resolved timestamp and must not remain in an awaiting-evidence state.",
+      status:
+        brokenResolvedPlans.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        brokenResolvedPlans.length === 0
+          ? "Resolved plan timestamps are consistent."
+          : `${brokenResolvedPlans.length} resolved plan(s) have inconsistent lifecycle timestamps.`,
+    });
+
+    const brokenWaitingPlans =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status !== null &&
+          waitingStatuses.includes(
+            plan.resolution_status
+          ) &&
+          (
+            plan.status !== "completed" ||
+            plan.development_completed_at === null ||
+            plan.awaiting_evidence_since === null ||
+            plan.resolved_at !== null
+          )
+      );
+
+    nextChecks.push({
+      id: "awaiting-evidence-state",
+      name: "Awaiting Evidence Integrity",
+      description:
+        "Plans waiting for reassessment, verification, or reverification must have completed development and an active evidence-wait timestamp.",
+      status:
+        brokenWaitingPlans.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        brokenWaitingPlans.length === 0
+          ? "All waiting plans have consistent lifecycle timestamps."
+          : `${brokenWaitingPlans.length} waiting plan(s) have inconsistent lifecycle state.`,
+    });
+
+    const completedActivitiesWithoutTimestamp =
+      activities.filter(
+        (activity) =>
+          activity.status === "completed" &&
+          activity.completed_at === null
+      );
+
+    nextChecks.push({
+      id: "activity-completion",
+      name: "Activity Completion Integrity",
+      description:
+        "Completed Development Plan activities must retain their completion timestamp.",
+      status:
+        completedActivitiesWithoutTimestamp.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        completedActivitiesWithoutTimestamp.length === 0
+          ? `${activities.length} activities passed the completion timestamp check.`
+          : `${completedActivitiesWithoutTimestamp.length} completed activity record(s) are missing completed_at.`,
+    });
+
+    const resolvedPlansWithOriginalAction =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status === "resolved" &&
+          plan.action_key !== null &&
+          readinessActions.some(
+            (action) =>
+              action.action_key ===
+              plan.action_key
+          )
+      );
+
+    nextChecks.push({
+      id: "resolved-original-action",
+      name: "Resolved Action Removal",
+      description:
+        "A resolved readiness-generated plan should not still have its exact original readiness action active.",
+      status:
+        resolvedPlansWithOriginalAction.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        resolvedPlansWithOriginalAction.length === 0
+          ? "No resolved plan still has its original readiness action."
+          : `${resolvedPlansWithOriginalAction.length} resolved plan(s) still have their original readiness action.`,
+    });
+
+    const practicalWaitingMismatch =
+      plans.filter(
+        (plan) =>
+          (
+            plan.action_type ===
+              "PRACTICAL_VERIFICATION_NEEDED" ||
+            plan.action_type ===
+              "PRACTICAL_DEVELOPMENT_NEEDED"
+          ) &&
+          plan.resolution_status !== "resolved" &&
+          plan.resolution_status !== "cancelled" &&
+          plan.resolution_status !==
+            "development_in_progress" &&
+          plan.resolution_status !==
+            "awaiting_verification"
+      );
+
+    nextChecks.push({
+      id: "practical-lifecycle",
+      name: "Practical Verification Lifecycle",
+      description:
+        "Practical plans should move only between development, awaiting verification, resolved, or cancelled.",
+      status:
+        practicalWaitingMismatch.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        practicalWaitingMismatch.length === 0
+          ? "Practical verification plans are in valid lifecycle states."
+          : `${practicalWaitingMismatch.length} practical plan(s) are in an unexpected lifecycle state.`,
+    });
+
+    const reverificationMismatch =
+      plans.filter(
+        (plan) =>
+          (
+            plan.action_type ===
+              "REVERIFICATION_DUE_SOON" ||
+            plan.action_type ===
+              "REVERIFICATION_REQUIRED"
+          ) &&
+          plan.resolution_status !== "resolved" &&
+          plan.resolution_status !== "cancelled" &&
+          plan.resolution_status !==
+            "development_in_progress" &&
+          plan.resolution_status !==
+            "awaiting_reverification"
+      );
+
+    nextChecks.push({
+      id: "reverification-lifecycle",
+      name: "Reverification Lifecycle",
+      description:
+        "Reverification plans should move only between development, awaiting reverification, resolved, or cancelled.",
+      status:
+        reverificationMismatch.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        reverificationMismatch.length === 0
+          ? "Reverification plans are in valid lifecycle states."
+          : `${reverificationMismatch.length} reverification plan(s) are in an unexpected lifecycle state.`,
+    });
+
+    const reassessmentMismatch =
+      plans.filter(
+        (plan) =>
+          (
+            plan.action_type ===
+              "CRITICAL_SAFETY_GAP" ||
+            plan.action_type ===
+              "KNOWLEDGE_GAP" ||
+            plan.action_type ===
+              "KNOWLEDGE_DEVELOPMENT_NEEDED"
+          ) &&
+          plan.resolution_status !== "resolved" &&
+          plan.resolution_status !== "cancelled" &&
+          plan.resolution_status !==
+            "development_in_progress" &&
+          plan.resolution_status !==
+            "awaiting_reassessment"
+      );
+
+    nextChecks.push({
+      id: "reassessment-lifecycle",
+      name: "Reassessment Lifecycle",
+      description:
+        "Knowledge and safety plans should move through development and reassessment before resolution.",
+      status:
+        reassessmentMismatch.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        reassessmentMismatch.length === 0
+          ? "Reassessment-based plans are in valid lifecycle states."
+          : `${reassessmentMismatch.length} reassessment plan(s) are in an unexpected lifecycle state.`,
+    });
+
+    const successorProtectedPlans =
+      plans.filter(
+        (plan) =>
+          (
+            plan.action_type ===
+              "REVERIFICATION_DUE_SOON" ||
+            plan.action_type ===
+              "REVERIFICATION_REQUIRED"
+          ) &&
+          plan.resolution_status ===
+            "development_in_progress" &&
+          plan.master_competency_template_id !== null &&
+          readinessActions.some(
+            (action) =>
+              action.employee_id ===
+                plan.employee_id &&
+              action.master_competency_template_id ===
+                plan.master_competency_template_id &&
+              (
+                action.action_type ===
+                  "PRACTICAL_DEVELOPMENT_NEEDED" ||
+                action.action_type ===
+                  "PRACTICAL_VERIFICATION_NEEDED"
+              )
+          )
+      );
+
+    nextChecks.push({
+      id: "successor-action-protection",
+      name: "Successor Action Protection",
+      description:
+        "Failed reverification may replace the original reverification action with a practical successor action without resolving the original plan.",
+      status:
+        "info",
+      detail:
+        successorProtectedPlans.length > 0
+          ? `${successorProtectedPlans.length} plan(s) are currently demonstrating successor-action protection.`
+          : "No live successor-action transition is currently present. This is normal when all test cases are resolved.",
+    });
+
+    return nextChecks;
+  }, [
+    plans,
+    activities,
+    readinessActions,
+  ]);
+
+  const employeeSummaries =
+    useMemo<EmployeeSummary[]>(() => {
+      return employees.map((employee) => {
+        const employeePlans =
+          plans.filter(
+            (plan) =>
+              plan.employee_id ===
+              employee.id
+          );
+
+        const employeeActions =
+          readinessActions.filter(
+            (action) =>
+              action.employee_id ===
+              employee.id
+          );
+
+        return {
+          employee,
+          planCount:
+            employeePlans.length,
+
+          activePlanCount:
+            employeePlans.filter(
+              (plan) =>
+                plan.resolution_status ===
+                  "development_in_progress"
+            ).length,
+
+          awaitingEvidenceCount:
+            employeePlans.filter(
+              (plan) =>
+                plan.resolution_status !== null &&
+                waitingStatuses.includes(
+                  plan.resolution_status
+                )
+            ).length,
+
+          resolvedPlanCount:
+            employeePlans.filter(
+              (plan) =>
+                plan.resolution_status ===
+                  "resolved"
+            ).length,
+
+          readinessActionCount:
+            employeeActions.length,
+        };
+      });
+    }, [
+      employees,
+      plans,
+      readinessActions,
+    ]);
+
+  const failingChecks =
+    checks.filter(
+      (check) => check.status === "fail"
+    ).length;
+
+  const passingChecks =
+    checks.filter(
+      (check) => check.status === "pass"
+    ).length;
+
+  const awaitingEvidencePlans =
+    plans.filter(
+      (plan) =>
+        plan.resolution_status !== null &&
+        waitingStatuses.includes(
+          plan.resolution_status
+        )
+    ).length;
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-7xl">
         <SystemHeader
           title="System Testing"
-          subtitle="IntegrateU Admin workspace for testing workforce-readiness workflows."
+          subtitle="IntegrateU Admin regression workspace for workforce-readiness workflows."
           backHref="/dashboard"
           backLabel="Dashboard"
           showHome={true}
@@ -121,6 +694,81 @@ export default function SystemTestingPage() {
           </div>
         )}
 
+        <section className="mb-12">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-cyan-400">
+                Regression Control Center
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold">
+                Lifecycle Health
+              </h2>
+
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                Live database checks for Development Plan,
+                reassessment, practical verification, and
+                reverification lifecycle integrity.
+              </p>
+
+              {lastLoadedAt && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Last refreshed{" "}
+                  {lastLoadedAt.toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={loadPage}
+              disabled={loading}
+              className="rounded-lg bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading
+                ? "Refreshing..."
+                : "Refresh Tests"}
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <MetricCard
+              label="Test Employees"
+              value={employees.length}
+            />
+
+            <MetricCard
+              label="Development Plans"
+              value={plans.length}
+            />
+
+            <MetricCard
+              label="Awaiting Evidence"
+              value={awaitingEvidencePlans}
+            />
+
+            <MetricCard
+              label="Checks Passing"
+              value={passingChecks}
+            />
+
+            <MetricCard
+              label="Checks Failing"
+              value={failingChecks}
+              alert={failingChecks > 0}
+            />
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            {checks.map((check) => (
+              <RegressionCheckCard
+                key={check.id}
+                check={check}
+              />
+            ))}
+          </div>
+        </section>
+
         <section>
           <div className="mb-5">
             <p className="text-xs font-medium uppercase tracking-wide text-cyan-400">
@@ -132,7 +780,8 @@ export default function SystemTestingPage() {
             </h2>
 
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Jump directly into each part of the readiness lifecycle.
+              Jump directly into each part of the
+              readiness lifecycle.
             </p>
           </div>
 
@@ -141,42 +790,42 @@ export default function SystemTestingPage() {
               href="/assessments"
               eyebrow="Assessments"
               title="Assessment Center"
-              description="Test assessment attempts and results."
+              description="Test assessment attempts, reassessments, and results."
             />
 
             <TestingCard
               href="/readiness-actions"
               eyebrow="Readiness"
               title="Readiness Actions"
-              description="Review generated readiness actions."
+              description="Review live generated readiness actions and successor actions."
             />
 
             <TestingCard
               href="/development-plans"
               eyebrow="Development"
               title="Development Plans"
-              description="Test plan creation, ownership, activities, completion, editing, and cancellation."
+              description="Test plan creation, activities, completion, evidence states, resolution, and cancellation."
             />
 
             <TestingCard
               href="/verify"
               eyebrow="Verification"
               title="Verify Employees"
-              description="Test practical verification workflows."
+              description="Test practical verification and reverification workflows."
             />
 
             <TestingCard
               href="/admin/verifiers"
               eyebrow="Administration"
               title="Verifier Management"
-              description="Manage verifier assignments."
+              description="Manage verifier assignments and test authorization."
             />
 
             <TestingCard
               href="/admin/library"
               eyebrow="Configuration"
               title="Master Library"
-              description="Review roles, competencies, industries, and assessments."
+              description="Review roles, competencies, industries, assessments, and reverification settings."
             />
           </div>
         </section>
@@ -192,7 +841,8 @@ export default function SystemTestingPage() {
             </h2>
 
             <p className="mt-2 text-sm text-slate-400">
-              Employees with TEST in their employee number appear here automatically.
+              Employees with TEST in their employee
+              number appear here automatically.
             </p>
           </div>
 
@@ -204,10 +854,10 @@ export default function SystemTestingPage() {
             </div>
           ) : (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {employees.map(
-                (employee) => (
+              {employeeSummaries.map(
+                (summary) => (
                   <article
-                    key={employee.id}
+                    key={summary.employee.id}
                     className="rounded-2xl border border-slate-800 bg-slate-900 p-6"
                   >
                     <p className="text-xs font-medium uppercase tracking-wide text-cyan-400">
@@ -215,32 +865,65 @@ export default function SystemTestingPage() {
                     </p>
 
                     <h3 className="mt-2 text-xl font-semibold">
-                      {employee.first_name}{" "}
-                      {employee.last_name}
+                      {summary.employee.first_name}{" "}
+                      {summary.employee.last_name}
                     </h3>
 
                     <p className="mt-2 text-sm text-slate-400">
-                      {employee.employee_number ??
+                      {summary.employee.employee_number ??
                         "No employee number"}
                     </p>
 
                     <p className="mt-1 text-xs text-slate-500">
-                      {employee.auth_user_id
+                      {summary.employee.auth_user_id
                         ? "Login linked"
                         : "No login linked"}
                     </p>
 
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <EmployeeMetric
+                        label="Plans"
+                        value={summary.planCount}
+                      />
+
+                      <EmployeeMetric
+                        label="In Development"
+                        value={
+                          summary.activePlanCount
+                        }
+                      />
+
+                      <EmployeeMetric
+                        label="Awaiting Evidence"
+                        value={
+                          summary.awaitingEvidenceCount
+                        }
+                      />
+
+                      <EmployeeMetric
+                        label="Readiness Actions"
+                        value={
+                          summary.readinessActionCount
+                        }
+                      />
+                    </div>
+
+                    <p className="mt-4 text-xs text-slate-500">
+                      Resolved plans:{" "}
+                      {summary.resolvedPlanCount}
+                    </p>
+
                     <div className="mt-5 flex flex-wrap gap-3">
                       <Link
-                        href={`/employees/${employee.id}`}
+                        href={`/employees/${summary.employee.id}`}
                         className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
                       >
                         Employee Profile
                       </Link>
 
                       <Link
-                        href={`/employees/${employee.id}/practical-verification`}
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                        href={`/employees/${summary.employee.id}/practical-verification`}
+                        className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800 hover:text-white"
                       >
                         Practical Verification
                       </Link>
@@ -253,6 +936,119 @@ export default function SystemTestingPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  alert = false,
+}: {
+  label: string;
+  value: number;
+  alert?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-5 ${
+        alert
+          ? "border-red-500/40 bg-red-950/20"
+          : "border-slate-800 bg-slate-900"
+      }`}
+    >
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-semibold ${
+          alert
+            ? "text-red-300"
+            : "text-white"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function RegressionCheckCard({
+  check,
+}: {
+  check: RegressionCheck;
+}) {
+  const styles =
+    check.status === "pass"
+      ? {
+          border:
+            "border-emerald-500/30",
+          badge:
+            "bg-emerald-500/10 text-emerald-300",
+          label: "PASS",
+        }
+      : check.status === "fail"
+        ? {
+            border:
+              "border-red-500/40",
+            badge:
+              "bg-red-500/10 text-red-300",
+            label: "FAIL",
+          }
+        : {
+            border:
+              "border-cyan-500/30",
+            badge:
+              "bg-cyan-500/10 text-cyan-300",
+            label: "INFO",
+          };
+
+  return (
+    <article
+      className={`rounded-2xl border bg-slate-900 p-6 ${styles.border}`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">
+            {check.name}
+          </h3>
+
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            {check.description}
+          </p>
+        </div>
+
+        <span
+          className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${styles.badge}`}
+        >
+          {styles.label}
+        </span>
+      </div>
+
+      <p className="mt-4 text-sm text-slate-300">
+        {check.detail}
+      </p>
+    </article>
+  );
+}
+
+function EmployeeMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+      <p className="text-xs text-slate-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-lg font-semibold text-white">
+        {value}
+      </p>
+    </div>
   );
 }
 
