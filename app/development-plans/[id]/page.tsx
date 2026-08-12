@@ -540,7 +540,7 @@ const {
   data,
   error,
 } = await supabase.rpc(
-  "wri_start_targeted_safety_reassessment",
+  "wri_start_targeted_reassessment",
   {
     p_development_plan_id:
       plan.development_plan_id,

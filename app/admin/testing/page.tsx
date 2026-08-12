@@ -604,11 +604,11 @@ export default function SystemTestingPage() {
         (plan) =>
           (
             plan.action_type ===
-              "CRITICAL_SAFETY_GAP" ||
+              "SAFETY_GAP" ||
             plan.action_type ===
-              "KNOWLEDGE_GAP" ||
+              "CRITICAL_KNOWLEDGE_GAP" ||
             plan.action_type ===
-              "KNOWLEDGE_DEVELOPMENT_NEEDED"
+              "KNOWLEDGE_DEVELOPMENT"
           ) &&
           plan.resolution_status !== "resolved" &&
           plan.resolution_status !== "cancelled" &&
@@ -817,9 +817,8 @@ export default function SystemTestingPage() {
       const reassessment =
         findLifecycleScenario(
           [
-            "CRITICAL_SAFETY_GAP",
-            "KNOWLEDGE_GAP",
-            "KNOWLEDGE_DEVELOPMENT_NEEDED",
+            "SAFETY_GAP",
+            "KNOWLEDGE_DEVELOPMENT",
           ],
           [
             "awaiting_reassessment",
