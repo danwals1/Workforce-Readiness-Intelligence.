@@ -76,6 +76,22 @@ type RegressionCheck = {
   detail: string;
 };
 
+
+type ScenarioCoverageStatus =
+  | "covered"
+  | "partial"
+  | "not_tested";
+
+type ScenarioCoverage = {
+  id: string;
+  name: string;
+  description: string;
+  status: ScenarioCoverageStatus;
+  detail: string;
+  planTitle: string | null;
+  developmentPlanId: string | null;
+};
+
 type EmployeeSummary = {
   employee: TestEmployee;
   planCount: number;
@@ -664,6 +680,415 @@ export default function SystemTestingPage() {
     readinessActions,
   ]);
 
+  const scenarioCoverage =
+    useMemo<ScenarioCoverage[]>(() => {
+      const eventsByPlan =
+        new Map<string, RegressionEvent[]>();
+
+      for (const event of history) {
+        const existing =
+          eventsByPlan.get(
+            event.development_plan_id
+          ) ?? [];
+
+        existing.push(event);
+
+        eventsByPlan.set(
+          event.development_plan_id,
+          existing
+        );
+      }
+
+      for (const events of eventsByPlan.values()) {
+        events.sort(
+          (a, b) =>
+            new Date(a.event_at).getTime() -
+            new Date(b.event_at).getTime()
+        );
+      }
+
+      function containsOrderedSequence(
+        values: Array<string | null>,
+        sequence: string[]
+      ) {
+        let sequenceIndex = 0;
+
+        for (const value of values) {
+          if (
+            value ===
+            sequence[sequenceIndex]
+          ) {
+            sequenceIndex += 1;
+
+            if (
+              sequenceIndex ===
+              sequence.length
+            ) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      function findLifecycleScenario(
+        actionTypes: string[],
+        sequence: string[]
+      ) {
+        let partial:
+          | {
+              planTitle: string;
+              developmentPlanId: string;
+            }
+          | null = null;
+
+        for (
+          const [
+            developmentPlanId,
+            events,
+          ] of eventsByPlan.entries()
+        ) {
+          const actionType =
+            events.find(
+              (event) =>
+                event.action_type !== null
+            )?.action_type ?? null;
+
+          if (
+            !actionType ||
+            !actionTypes.includes(actionType)
+          ) {
+            continue;
+          }
+
+          const resolutionValues =
+            events.map(
+              (event) =>
+                event.new_resolution_status
+            );
+
+          const planTitle =
+            events[0]?.plan_title ??
+            "Development Plan";
+
+          if (
+            containsOrderedSequence(
+              resolutionValues,
+              sequence
+            )
+          ) {
+            return {
+              status:
+                "covered" as const,
+
+              planTitle,
+
+              developmentPlanId,
+            };
+          }
+
+          if (!partial) {
+            partial = {
+              planTitle,
+              developmentPlanId,
+            };
+          }
+        }
+
+        if (partial) {
+          return {
+            status:
+              "partial" as const,
+
+            ...partial,
+          };
+        }
+
+        return {
+          status:
+            "not_tested" as const,
+
+          planTitle: null,
+          developmentPlanId: null,
+        };
+      }
+
+      const reassessment =
+        findLifecycleScenario(
+          [
+            "CRITICAL_SAFETY_GAP",
+            "KNOWLEDGE_GAP",
+            "KNOWLEDGE_DEVELOPMENT_NEEDED",
+          ],
+          [
+            "awaiting_reassessment",
+            "development_in_progress",
+            "awaiting_reassessment",
+            "resolved",
+          ]
+        );
+
+      const practical =
+        findLifecycleScenario(
+          [
+            "PRACTICAL_VERIFICATION_NEEDED",
+            "PRACTICAL_DEVELOPMENT_NEEDED",
+          ],
+          [
+            "awaiting_verification",
+            "development_in_progress",
+            "awaiting_verification",
+            "resolved",
+          ]
+        );
+
+      const reverification =
+        findLifecycleScenario(
+          [
+            "REVERIFICATION_DUE_SOON",
+            "REVERIFICATION_REQUIRED",
+          ],
+          [
+            "awaiting_reverification",
+            "development_in_progress",
+            "awaiting_reverification",
+            "resolved",
+          ]
+        );
+
+      let successorEvent:
+        RegressionEvent | null = null;
+
+      for (const event of history) {
+        if (
+          (
+            event.action_type ===
+              "REVERIFICATION_DUE_SOON" ||
+            event.action_type ===
+              "REVERIFICATION_REQUIRED"
+          ) &&
+          (
+            event.current_readiness_action_type ===
+              "PRACTICAL_DEVELOPMENT_NEEDED" ||
+            event.current_readiness_action_type ===
+              "PRACTICAL_VERIFICATION_NEEDED"
+          )
+        ) {
+          successorEvent = event;
+          break;
+        }
+      }
+
+      let cancellationEvent:
+        RegressionEvent | null = null;
+
+      for (const event of history) {
+        if (
+          event.new_resolution_status ===
+            "cancelled" &&
+          event.old_resolution_status !==
+            "cancelled"
+        ) {
+          cancellationEvent = event;
+          break;
+        }
+      }
+
+      let manualResolvedEvent:
+        RegressionEvent | null = null;
+
+      for (const event of history) {
+        if (
+          event.action_type === null &&
+          event.new_resolution_status ===
+            "resolved"
+        ) {
+          manualResolvedEvent = event;
+          break;
+        }
+      }
+
+      return [
+        {
+          id:
+            "reassessment-fail-pass",
+
+          name:
+            "Reassessment Fail → Redevelopment → Pass",
+
+          description:
+            "Development completes, reassessment fails, the same plan reopens for more development, then a later reassessment resolves it.",
+
+          status:
+            reassessment.status,
+
+          detail:
+            reassessment.status ===
+            "covered"
+              ? "Full reassessment fail-and-recovery lifecycle captured."
+              : reassessment.status ===
+                  "partial"
+                ? "Reassessment history exists, but the complete fail → redevelopment → pass sequence has not been captured since history tracking began."
+                : "No reassessment lifecycle has been captured since history tracking began.",
+
+          planTitle:
+            reassessment.planTitle,
+
+          developmentPlanId:
+            reassessment.developmentPlanId,
+        },
+
+        {
+          id:
+            "practical-fail-pass",
+
+          name:
+            "Practical Fail → Redevelopment → Pass",
+
+          description:
+            "Development completes, practical verification fails, prior activities remain intact, additional development occurs, and a later verification resolves the plan.",
+
+          status:
+            practical.status,
+
+          detail:
+            practical.status ===
+            "covered"
+              ? "Full practical verification fail-and-recovery lifecycle captured."
+              : practical.status ===
+                  "partial"
+                ? "Practical verification history exists, but the complete fail → redevelopment → pass sequence has not been captured since history tracking began."
+                : "No practical fail-and-recovery lifecycle has been captured since history tracking began.",
+
+          planTitle:
+            practical.planTitle,
+
+          developmentPlanId:
+            practical.developmentPlanId,
+        },
+
+        {
+          id:
+            "reverification-fail-pass",
+
+          name:
+            "Reverification Fail → Redevelopment → Pass",
+
+          description:
+            "A reverification fails, the original reverification plan reopens for development, then returns to awaiting reverification and ultimately resolves.",
+
+          status:
+            reverification.status,
+
+          detail:
+            reverification.status ===
+            "covered"
+              ? "Full reverification fail-and-recovery lifecycle captured."
+              : reverification.status ===
+                  "partial"
+                ? "Reverification history exists, but the complete fail → redevelopment → pass sequence has not been captured since history tracking began."
+                : "No reverification fail-and-recovery lifecycle has been captured since history tracking began.",
+
+          planTitle:
+            reverification.planTitle,
+
+          developmentPlanId:
+            reverification.developmentPlanId,
+        },
+
+        {
+          id:
+            "successor-action",
+
+          name:
+            "Reverification Successor Action",
+
+          description:
+            "A failed reverification changes the live readiness action to a practical successor action without falsely resolving the original reverification plan.",
+
+          status:
+            successorEvent
+              ? "covered"
+              : "not_tested",
+
+          detail:
+            successorEvent
+              ? `Captured successor action: ${formatActionType(
+                  successorEvent.current_readiness_action_type
+                )}.`
+              : "No reverification successor-action transition has been captured since history tracking began.",
+
+          planTitle:
+            successorEvent?.plan_title ??
+            null,
+
+          developmentPlanId:
+            successorEvent?.development_plan_id ??
+            null,
+        },
+
+        {
+          id:
+            "cancellation",
+
+          name:
+            "Development Plan Cancellation",
+
+          description:
+            "An active Development Plan transitions to the cancelled lifecycle state and remains terminal.",
+
+          status:
+            cancellationEvent
+              ? "covered"
+              : "not_tested",
+
+          detail:
+            cancellationEvent
+              ? "Cancellation transition captured successfully."
+              : "No Development Plan cancellation has been captured since history tracking began.",
+
+          planTitle:
+            cancellationEvent?.plan_title ??
+            null,
+
+          developmentPlanId:
+            cancellationEvent?.development_plan_id ??
+            null,
+        },
+
+        {
+          id:
+            "manual-resolution",
+
+          name:
+            "Manual Plan Resolution",
+
+          description:
+            "A manager-created Development Plan with no readiness action resolves after all active development activities are completed.",
+
+          status:
+            manualResolvedEvent
+              ? "covered"
+              : "not_tested",
+
+          detail:
+            manualResolvedEvent
+              ? "Manual Development Plan resolution captured successfully."
+              : "No manual Development Plan resolution has been captured since history tracking began.",
+
+          planTitle:
+            manualResolvedEvent?.plan_title ??
+            null,
+
+          developmentPlanId:
+            manualResolvedEvent?.development_plan_id ??
+            null,
+        },
+      ];
+    }, [history]);
+
+
   const employeeSummaries =
     useMemo<EmployeeSummary[]>(() => {
       return employees.map((employee) => {
@@ -830,6 +1255,36 @@ export default function SystemTestingPage() {
             ))}
           </div>
         </section>
+
+        <section className="mb-12">
+          <div className="mb-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-400">
+              Test Coverage
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold">
+              Lifecycle Scenario Coverage
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+              Coverage is based only on durable regression
+              events captured after history tracking was
+              enabled. Earlier manual testing is not inferred.
+            </p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {scenarioCoverage.map(
+              (scenario) => (
+                <ScenarioCoverageCard
+                  key={scenario.id}
+                  scenario={scenario}
+                />
+              )
+            )}
+          </div>
+        </section>
+
 
         <section className="mb-12">
           <div className="mb-5">
@@ -1240,6 +1695,79 @@ function formatActionType(
         word.slice(1)
     )
     .join(" ");
+}
+
+
+function ScenarioCoverageCard({
+  scenario,
+}: {
+  scenario: ScenarioCoverage;
+}) {
+  const styles =
+    scenario.status === "covered"
+      ? {
+          border:
+            "border-emerald-500/30",
+          badge:
+            "bg-emerald-500/10 text-emerald-300",
+          label:
+            "COVERED",
+        }
+      : scenario.status === "partial"
+        ? {
+            border:
+              "border-amber-500/30",
+            badge:
+              "bg-amber-500/10 text-amber-300",
+            label:
+              "PARTIAL",
+          }
+        : {
+            border:
+              "border-slate-700",
+            badge:
+              "bg-slate-800 text-slate-400",
+            label:
+              "NOT YET TESTED",
+          };
+
+  return (
+    <article
+      className={`rounded-2xl border bg-slate-900 p-6 ${styles.border}`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">
+            {scenario.name}
+          </h3>
+
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            {scenario.description}
+          </p>
+        </div>
+
+        <span
+          className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${styles.badge}`}
+        >
+          {styles.label}
+        </span>
+      </div>
+
+      <p className="mt-4 text-sm text-slate-300">
+        {scenario.detail}
+      </p>
+
+      {scenario.developmentPlanId &&
+        scenario.planTitle && (
+          <Link
+            href={`/development-plans/${scenario.developmentPlanId}`}
+            className="mt-4 inline-flex text-sm font-medium text-cyan-300 hover:text-cyan-200"
+          >
+            Open {scenario.planTitle} →
+          </Link>
+        )}
+    </article>
+  );
 }
 
 
