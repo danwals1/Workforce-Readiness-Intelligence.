@@ -1613,8 +1613,7 @@ Next Required Action
                 <h2 className="text-2xl font-semibold">Development Activities</h2>
                 <p className="mt-1 text-sm text-slate-400">Track the work required to close this readiness gap.</p>
               </div>
-              {plan.resolution_status !== "resolved" &&
-                plan.resolution_status !== "cancelled" &&
+              {plan.resolution_status === "development_in_progress" &&
                 plan.status !== "cancelled" && (
                 <button
                   type="button"
@@ -1633,8 +1632,7 @@ Next Required Action
             </div>
 
             {showAddActivity &&
-              plan.resolution_status !== "resolved" &&
-              plan.resolution_status !== "cancelled" &&
+              plan.resolution_status === "development_in_progress" &&
               plan.status !== "cancelled" && (
               <div className="mb-5 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5">
                 <h3 className="font-semibold">New Development Activity</h3>
