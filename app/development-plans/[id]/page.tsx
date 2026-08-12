@@ -561,11 +561,13 @@ if (!data) {
   return;
 }
 
-router.push(
-  `/assessments/attempts/${data}?plan=${encodeURIComponent(
-    plan.development_plan_id
-  )}`
+setSuccessMessage(
+  "Reassessment is ready for the employee. They can open it from the Assessments page."
 );
+
+setStartingReassessment(false);
+
+await refreshWorkspace();
 }
 
   useEffect(() => {
@@ -1577,8 +1579,8 @@ Next Required Action
               className="rounded-lg bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {startingReassessment
-                ? "Starting..."
-                : "Reassess Employee"}
+                ? "Preparing..."
+                : "Prepare Employee Reassessment"}
             </button>
           )}
 

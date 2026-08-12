@@ -1780,15 +1780,15 @@ function EventBadge({
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+      className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-xs font-medium ${
         isCreated
-          ? "bg-violet-500/10 text-violet-300"
-          : "bg-slate-700 text-slate-200"
+          ? "border-violet-300 bg-violet-50 text-violet-700"
+          : "border-blue-200 bg-blue-50 text-blue-700"
       }`}
     >
       {isCreated
         ? "Plan Created"
-        : "Lifecycle Transition"}
+        : "Transition"}
     </span>
   );
 }
@@ -1801,18 +1801,78 @@ function ResolutionTransition({
   oldValue: string | null;
   newValue: string | null;
 }) {
+  function statusClasses(
+    value: string | null,
+    isCurrent: boolean
+  ) {
+    if (!value) {
+      return "border-slate-200 bg-slate-50 text-slate-500";
+    }
+
+    if (value === "resolved") {
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    }
+
+    if (value === "cancelled") {
+      return "border-red-200 bg-red-50 text-red-700";
+    }
+
+    if (
+      value === "awaiting_reassessment" ||
+      value === "awaiting_verification" ||
+      value === "awaiting_reverification"
+    ) {
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    }
+
+    if (value === "development_in_progress") {
+      return "border-cyan-200 bg-cyan-50 text-cyan-700";
+    }
+
+    return isCurrent
+      ? "border-blue-200 bg-blue-50 text-blue-700"
+      : "border-slate-200 bg-slate-50 text-slate-600";
+  }
+
+  function statusLabel(
+    value: string | null
+  ) {
+    if (!value) {
+      return "None";
+    }
+
+    return value
+      .split("_")
+      .map(
+        (word) =>
+          word.charAt(0).toUpperCase() +
+          word.slice(1)
+      )
+      .join(" ");
+  }
+
   return (
-    <div className="flex min-w-[220px] items-center gap-2 text-sm">
-      <span className="rounded-md bg-slate-950 px-2 py-1 text-slate-400">
-        {oldValue ?? "None"}
+    <div className="flex min-w-[250px] items-center gap-2 text-sm">
+      <span
+        className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-medium ${statusClasses(
+          oldValue,
+          false
+        )}`}
+      >
+        {statusLabel(oldValue)}
       </span>
 
-      <span className="text-slate-600">
+      <span className="text-slate-400">
         →
       </span>
 
-      <span className="rounded-md bg-slate-800 px-2 py-1 font-medium text-white">
-        {newValue ?? "None"}
+      <span
+        className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold ${statusClasses(
+          newValue,
+          true
+        )}`}
+      >
+        {statusLabel(newValue)}
       </span>
     </div>
   );

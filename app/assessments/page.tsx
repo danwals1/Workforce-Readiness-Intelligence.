@@ -19,6 +19,14 @@ type Assessment = {
   type: string;
 };
 
+type PendingReassessment = {
+  id: string;
+  assessment_id: string;
+  development_plan_id: string | null;
+  started_at: string | null;
+  assessment_name: string;
+};
+
 function AssessmentsPageContent() {
   const router = useRouter();
 const searchParams = useSearchParams();
@@ -44,6 +52,11 @@ searchParams.get("plan");
 
   const [starting, setStarting] =
     useState(false);
+
+  const [
+    pendingReassessments,
+    setPendingReassessments,
+  ] = useState<PendingReassessment[]>([]);
 
   useEffect(() => {
     async function loadAssessmentPage() {
@@ -134,6 +147,82 @@ searchParams.get("plan");
   }
 
   setEmployee(employeeData);
+
+  if (!requestedEmployeeId) {
+    const {
+      data: pendingAttemptData,
+      error: pendingAttemptError,
+    } = await supabase
+      .from("assessment_attempts")
+      .select(`
+        id,
+        assessment_id,
+        development_plan_id,
+        started_at
+      `)
+      .eq("employee_id", employeeData.id)
+      .eq("attempt_mode", "targeted_reassessment")
+      .in("status", ["not_started", "in_progress"])
+      .order("created_at", { ascending: false });
+
+    if (pendingAttemptError) {
+      setMessage(pendingAttemptError.message);
+      return;
+    }
+
+    const pendingAttempts = pendingAttemptData ?? [];
+
+    if (pendingAttempts.length > 0) {
+      const assessmentIds = [
+        ...new Set(
+          pendingAttempts.map(
+            (attempt) => attempt.assessment_id
+          )
+        ),
+      ];
+
+      const {
+        data: assessmentNamesData,
+        error: assessmentNamesError,
+      } = await supabase
+        .from("assessments")
+        .select("id, name")
+        .in("id", assessmentIds);
+
+      if (assessmentNamesError) {
+        setMessage(assessmentNamesError.message);
+        return;
+      }
+
+      const assessmentNames = new Map(
+        (assessmentNamesData ?? []).map(
+          (item) => [item.id, item.name]
+        )
+      );
+
+      setPendingReassessments(
+        pendingAttempts.map(
+          (attempt) => ({
+            id: attempt.id,
+            assessment_id:
+              attempt.assessment_id,
+            development_plan_id:
+              attempt.development_plan_id,
+            started_at:
+              attempt.started_at,
+            assessment_name:
+              assessmentNames.get(
+                attempt.assessment_id
+              ) ?? "Targeted Reassessment",
+          })
+        )
+      );
+    } else {
+      setPendingReassessments([]);
+    }
+  } else {
+    setPendingReassessments([]);
+  }
 
   let assessmentData:
     Assessment | null = null;
@@ -342,6 +431,58 @@ searchParams.get("plan");
           showSignOut={true}
         />
 
+        {/* Pending Reassessments */}
+
+        {pendingReassessments.length > 0 && (
+          <section className="mb-6 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
+              Development Plan Reassessment
+            </p>
+
+            <h2 className="mt-2 text-xl font-semibold">
+              Reassessment Ready
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Complete the targeted reassessment below before returning to your normal assessment work.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              {pendingReassessments.map(
+                (pending) => (
+                  <div
+                    key={pending.id}
+                    className="flex flex-col gap-4 rounded-xl border border-slate-700 bg-slate-950/60 p-5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold">
+                        {pending.assessment_name}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-400">
+                        Targeted competency reassessment
+                      </p>
+                    </div>
+
+                    <Link
+                      href={`/assessments/attempts/${pending.id}${
+                        pending.development_plan_id
+                          ? `?plan=${encodeURIComponent(
+                              pending.development_plan_id
+                            )}`
+                          : ""
+                      }`}
+                      className="inline-flex items-center justify-center rounded-lg bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                    >
+                      Open Reassessment
+                    </Link>
+                  </div>
+                )
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Message */}
 
         {message && (
@@ -353,7 +494,8 @@ searchParams.get("plan");
         {/* Assessment */}
 
         {employee &&
-          assessment && (
+          assessment &&
+          pendingReassessments.length === 0 && (
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
               <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
 
