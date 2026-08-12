@@ -147,6 +147,9 @@ const [practicalEvidence, setPracticalEvidence] =
 
   const [completionNotes, setCompletionNotes] =
     useState("");
+
+  const [completionEvidenceUrl, setCompletionEvidenceUrl] =
+    useState("");
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [addingActivity, setAddingActivity] = useState(false);
 
@@ -653,7 +656,8 @@ router.push(
   async function updateActivityStatus(
     activityId: string,
     status: string,
-    notes: string | null = null
+    notes: string | null = null,
+    evidenceUrl: string | null = null
   ) {
     if (
       plan?.resolution_status === "resolved" ||
@@ -675,6 +679,11 @@ router.push(
       setCompletionNotes(
         activity?.completion_notes ?? ""
       );
+
+      setCompletionEvidenceUrl(
+        activity?.evidence_url ?? ""
+      );
+
       setMessage("");
       setSuccessMessage("");
       return;
@@ -694,6 +703,12 @@ router.push(
           notes?.trim()
             ? notes.trim()
             : null,
+
+        p_evidence_url:
+          status === "completed" &&
+          evidenceUrl?.trim()
+            ? evidenceUrl.trim()
+            : null,
       }
     );
 
@@ -708,6 +723,7 @@ router.push(
 
       setCompletingActivityId(null);
       setCompletionNotes("");
+      setCompletionEvidenceUrl("");
 
       setSuccessMessage(
         status === "completed"
@@ -728,6 +744,7 @@ router.push(
   function cancelActivityCompletion() {
     setCompletingActivityId(null);
     setCompletionNotes("");
+    setCompletionEvidenceUrl("");
   }
 
   async function confirmActivityCompletion(
@@ -743,7 +760,8 @@ router.push(
     await updateActivityStatus(
       activityId,
       "completed",
-      completionNotes
+      completionNotes,
+      completionEvidenceUrl
     );
   }
 
@@ -1676,6 +1694,17 @@ Next Required Action
                                 Completed {formatDateTime(activity.completed_at)}
                               </p>
                             )}
+
+                            {activity.evidence_url && (
+                              <a
+                                href={activity.evidence_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 inline-block text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
+                              >
+                                View Evidence →
+                              </a>
+                            )}
                           </div>
                         )}
 
@@ -1700,6 +1729,30 @@ Next Required Action
                               placeholder="Example: Completed manufacturer training and demonstrated proper configuration during supervised field work."
                               className="mt-4 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400"
                             />
+
+                            <label className="mt-4 block text-sm text-slate-300">
+                              Evidence Link
+                              <span className="ml-2 text-xs text-slate-500">
+                                Optional
+                              </span>
+
+                              <input
+                                type="url"
+                                value={completionEvidenceUrl}
+                                onChange={(event) =>
+                                  setCompletionEvidenceUrl(
+                                    event.target.value
+                                  )
+                                }
+                                placeholder="https://..."
+                                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400"
+                              />
+
+                              <span className="mt-2 block text-xs leading-5 text-slate-500">
+                                Add a link to a certificate, LMS record, photo folder,
+                                video, manufacturer credential, or other supporting evidence.
+                              </span>
+                            </label>
 
                             <div className="mt-4 flex flex-wrap justify-end gap-3">
                               <button
