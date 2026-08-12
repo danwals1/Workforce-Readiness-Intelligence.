@@ -141,6 +141,12 @@ const [practicalEvidence, setPracticalEvidence] =
   const [message, setMessage] = useState("Loading development plan...");
   const [successMessage, setSuccessMessage] = useState("");
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
+
+  const [completingActivityId, setCompletingActivityId] =
+    useState<string | null>(null);
+
+  const [completionNotes, setCompletionNotes] =
+    useState("");
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [addingActivity, setAddingActivity] = useState(false);
 
@@ -644,13 +650,33 @@ router.push(
     setAddingActivity(false);
   }
 
-  async function updateActivityStatus(activityId: string, status: string) {
+  async function updateActivityStatus(
+    activityId: string,
+    status: string,
+    notes: string | null = null
+  ) {
     if (
-      plan?.resolution_status === "resolved"
+      plan?.resolution_status === "resolved" ||
+      plan?.resolution_status === "cancelled" ||
+      plan?.status === "cancelled"
     ) {
       setMessage(
-        "Resolved development plans are read-only."
+        "Resolved or cancelled development plans are read-only."
       );
+      return;
+    }
+
+    if (status === "completed" && notes === null) {
+      const activity = activities.find(
+        (item) => item.id === activityId
+      );
+
+      setCompletingActivityId(activityId);
+      setCompletionNotes(
+        activity?.completion_notes ?? ""
+      );
+      setMessage("");
+      setSuccessMessage("");
       return;
     }
 
@@ -663,7 +689,11 @@ router.push(
       {
         p_activity_id: activityId,
         p_status: status,
-        p_completion_notes: null,
+        p_completion_notes:
+          status === "completed" &&
+          notes?.trim()
+            ? notes.trim()
+            : null,
       }
     );
 
@@ -675,7 +705,15 @@ router.push(
 
     try {
       await refreshWorkspace();
-      setSuccessMessage("Activity status updated.");
+
+      setCompletingActivityId(null);
+      setCompletionNotes("");
+
+      setSuccessMessage(
+        status === "completed"
+          ? "Development activity completed."
+          : "Activity status updated."
+      );
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -685,6 +723,28 @@ router.push(
     }
 
     setSavingActivityId(null);
+  }
+
+  function cancelActivityCompletion() {
+    setCompletingActivityId(null);
+    setCompletionNotes("");
+  }
+
+  async function confirmActivityCompletion(
+    activityId: string
+  ) {
+    if (!completionNotes.trim()) {
+      setMessage(
+        "Add completion notes before completing this activity."
+      );
+      return;
+    }
+
+    await updateActivityStatus(
+      activityId,
+      "completed",
+      completionNotes
+    );
   }
 
   const remainingActivities = useMemo(
@@ -1601,9 +1661,85 @@ Next Required Action
                         <h3 className="mt-3 text-lg font-semibold">{activity.sequence_number}. {activity.title}</h3>
                         {activity.description && <p className="mt-2 text-sm leading-6 text-slate-400">{activity.description}</p>}
                         {activity.due_date && <p className="mt-3 text-xs text-slate-500">Due {formatDate(activity.due_date)}</p>}
+                        {activity.completion_notes && (
+                          <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-emerald-300">
+                              Completion Notes
+                            </p>
+
+                            <p className="mt-2 text-sm leading-6 text-slate-300">
+                              {activity.completion_notes}
+                            </p>
+
+                            {activity.completed_at && (
+                              <p className="mt-2 text-xs text-slate-500">
+                                Completed {formatDateTime(activity.completed_at)}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {completingActivityId === activity.id && (
+                          <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+                            <p className="text-sm font-semibold text-cyan-300">
+                              Complete Activity
+                            </p>
+
+                            <p className="mt-1 text-xs leading-5 text-slate-400">
+                              Record what was completed, observed, or demonstrated.
+                            </p>
+
+                            <textarea
+                              value={completionNotes}
+                              onChange={(event) =>
+                                setCompletionNotes(
+                                  event.target.value
+                                )
+                              }
+                              rows={4}
+                              placeholder="Example: Completed manufacturer training and demonstrated proper configuration during supervised field work."
+                              className="mt-4 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-400"
+                            />
+
+                            <div className="mt-4 flex flex-wrap justify-end gap-3">
+                              <button
+                                type="button"
+                                onClick={cancelActivityCompletion}
+                                disabled={
+                                  savingActivityId ===
+                                  activity.id
+                                }
+                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  confirmActivityCompletion(
+                                    activity.id
+                                  )
+                                }
+                                disabled={
+                                  savingActivityId ===
+                                    activity.id ||
+                                  !completionNotes.trim()
+                                }
+                                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingActivityId ===
+                                activity.id
+                                  ? "Completing..."
+                                  : "Confirm Complete"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <select value={activity.status} disabled={
                           savingActivityId === activity.id ||
+                          completingActivityId === activity.id ||
                           plan.resolution_status === "resolved" ||
                           plan.resolution_status === "cancelled" ||
                           plan.status === "cancelled"
