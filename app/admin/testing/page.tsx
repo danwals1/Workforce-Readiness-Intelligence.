@@ -45,6 +45,27 @@ type ReadinessAction = {
   action_label: string;
 };
 
+
+type RegressionEvent = {
+  id: string;
+  event_at: string;
+  event_type: string;
+  employee_id: string;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+  development_plan_id: string;
+  plan_title: string;
+  action_type: string | null;
+  action_key: string | null;
+  old_status: string | null;
+  new_status: string | null;
+  old_resolution_status: string | null;
+  new_resolution_status: string | null;
+  current_readiness_action_type: string | null;
+  current_readiness_action_key: string | null;
+};
+
 type RegressionStatus = "pass" | "fail" | "info";
 
 type RegressionCheck = {
@@ -93,6 +114,10 @@ export default function SystemTestingPage() {
 
   const [readinessActions, setReadinessActions] =
     useState<ReadinessAction[]>([]);
+
+
+  const [history, setHistory] =
+    useState<RegressionEvent[]>([]);
 
   const [message, setMessage] =
     useState("Loading testing workspace...");
@@ -201,6 +226,7 @@ export default function SystemTestingPage() {
     const [
       plansResult,
       readinessResult,
+      historyResult,
     ] = await Promise.all([
       supabase
         .from("development_plans")
@@ -233,6 +259,32 @@ export default function SystemTestingPage() {
           action_label
         `)
         .in("employee_id", employeeIds),
+
+      supabase
+        .from("v_system_regression_test_history")
+        .select(`
+          id,
+          event_at,
+          event_type,
+          employee_id,
+          first_name,
+          last_name,
+          employee_number,
+          development_plan_id,
+          plan_title,
+          action_type,
+          action_key,
+          old_status,
+          new_status,
+          old_resolution_status,
+          new_resolution_status,
+          current_readiness_action_type,
+          current_readiness_action_key
+        `)
+        .order("event_at", {
+          ascending: false,
+        })
+        .limit(100),
     ]);
 
     if (plansResult.error) {
@@ -246,6 +298,16 @@ export default function SystemTestingPage() {
       setLoading(false);
       return;
     }
+
+    if (historyResult.error) {
+      setMessage(historyResult.error.message);
+      setLoading(false);
+      return;
+    }
+
+    setHistory(
+      (historyResult.data ?? []) as RegressionEvent[]
+    );
 
     const nextPlans =
       (plansResult.data ?? []) as DevelopmentPlan[];
@@ -769,6 +831,136 @@ export default function SystemTestingPage() {
           </div>
         </section>
 
+        <section className="mb-12">
+          <div className="mb-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-violet-400">
+              Durable Evidence
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold">
+              Regression Test History
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+              Automatically recorded Development Plan lifecycle
+              transitions for TEST employees. History begins when
+              regression tracking was enabled.
+            </p>
+          </div>
+
+          {history.length === 0 ? (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
+              <p className="font-medium">
+                No regression events recorded yet.
+              </p>
+
+              <p className="mt-2 text-sm text-slate-400">
+                New TEST employee Development Plan transitions
+                will appear here automatically.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-800">
+                  <thead className="bg-slate-950">
+                    <tr>
+                      <TableHeader>Time</TableHeader>
+                      <TableHeader>Employee</TableHeader>
+                      <TableHeader>Plan</TableHeader>
+                      <TableHeader>Event</TableHeader>
+                      <TableHeader>
+                        Resolution Transition
+                      </TableHeader>
+                      <TableHeader>
+                        Current Readiness Action
+                      </TableHeader>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-800">
+                    {history.map((event) => (
+                      <tr
+                        key={event.id}
+                        className="align-top"
+                      >
+                        <TableCell>
+                          <p className="whitespace-nowrap text-sm text-slate-300">
+                            {new Date(
+                              event.event_at
+                            ).toLocaleString()}
+                          </p>
+                        </TableCell>
+
+                        <TableCell>
+                          <p className="font-medium text-white">
+                            {event.first_name}{" "}
+                            {event.last_name}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            {event.employee_number ??
+                              "No employee number"}
+                          </p>
+                        </TableCell>
+
+                        <TableCell>
+                          <Link
+                            href={`/development-plans/${event.development_plan_id}`}
+                            className="font-medium text-cyan-300 hover:text-cyan-200"
+                          >
+                            {event.plan_title}
+                          </Link>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatActionType(
+                              event.action_type
+                            )}
+                          </p>
+                        </TableCell>
+
+                        <TableCell>
+                          <EventBadge
+                            eventType={
+                              event.event_type
+                            }
+                          />
+                        </TableCell>
+
+                        <TableCell>
+                          <ResolutionTransition
+                            oldValue={
+                              event.old_resolution_status
+                            }
+                            newValue={
+                              event.new_resolution_status
+                            }
+                          />
+                        </TableCell>
+
+                        <TableCell>
+                          {event.current_readiness_action_type ? (
+                            <span className="inline-flex rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
+                              {formatActionType(
+                                event.current_readiness_action_type
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-slate-500">
+                              None
+                            </span>
+                          )}
+                        </TableCell>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+
+
         <section>
           <div className="mb-5">
             <p className="text-xs font-medium uppercase tracking-wide text-cyan-400">
@@ -1031,6 +1223,103 @@ function RegressionCheckCard({
     </article>
   );
 }
+
+function formatActionType(
+  value: string | null
+) {
+  if (!value) {
+    return "Manual Plan";
+  }
+
+  return value
+    .toLowerCase()
+    .split("_")
+    .map(
+      (word) =>
+        word.charAt(0).toUpperCase() +
+        word.slice(1)
+    )
+    .join(" ");
+}
+
+
+function EventBadge({
+  eventType,
+}: {
+  eventType: string;
+}) {
+  const isCreated =
+    eventType === "plan_created";
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        isCreated
+          ? "bg-violet-500/10 text-violet-300"
+          : "bg-slate-700 text-slate-200"
+      }`}
+    >
+      {isCreated
+        ? "Plan Created"
+        : "Lifecycle Transition"}
+    </span>
+  );
+}
+
+
+function ResolutionTransition({
+  oldValue,
+  newValue,
+}: {
+  oldValue: string | null;
+  newValue: string | null;
+}) {
+  return (
+    <div className="flex min-w-[220px] items-center gap-2 text-sm">
+      <span className="rounded-md bg-slate-950 px-2 py-1 text-slate-400">
+        {oldValue ?? "None"}
+      </span>
+
+      <span className="text-slate-600">
+        →
+      </span>
+
+      <span className="rounded-md bg-slate-800 px-2 py-1 font-medium text-white">
+        {newValue ?? "None"}
+      </span>
+    </div>
+  );
+}
+
+
+function TableHeader({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <th
+      scope="col"
+      className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+    >
+      {children}
+    </th>
+  );
+}
+
+
+function TableCell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <td className="px-5 py-4">
+      {children}
+    </td>
+  );
+}
+
 
 function EmployeeMetric({
   label,
