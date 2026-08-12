@@ -547,6 +547,29 @@ export default function DashboardPage() {
                   </p>
                 </Link>
               )}
+{isIntegrateAdmin && (
+  <Link
+    href="/admin/testing"
+    className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
+  >
+    <p className="text-sm font-medium text-cyan-400">
+      System Testing
+    </p>
+
+    <h3 className="mt-2 text-xl font-semibold">
+      Testing Workspace
+    </h3>
+
+    <p className="mt-2 text-sm leading-6 text-slate-400">
+      Test assessment, readiness, development,
+      verification, and administration workflows.
+    </p>
+
+    <p className="mt-5 text-sm font-medium text-cyan-400">
+      Open System Testing →
+    </p>
+  </Link>
+)}
             </div>
           </section>
         )}
