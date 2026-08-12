@@ -145,7 +145,7 @@ export default function AssessmentDetailPage() {
           <button
             onClick={handleSaveName}
             disabled={savingName}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
           >
             {savingName ? "Saving…" : "Save"}
           </button>

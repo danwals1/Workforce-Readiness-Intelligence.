@@ -805,7 +805,7 @@ const uniqueVerifiedCompetencies =
               <div className="mt-6">
                 <Link
                   href={`/assessments/attempts/${summary.attempt_id}/results`}
-                  className="inline-block rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                  className="inline-block rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
                 >
                   View Assessment Results
                 </Link>
@@ -1052,7 +1052,7 @@ const uniqueVerifiedCompetencies =
 
                     <Link
                       href={`/development-plans/${plan.development_plan_id}`}
-                      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
                     >
                       View Plan
                     </Link>

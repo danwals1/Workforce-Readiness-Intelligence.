@@ -379,7 +379,7 @@ export default function ReadinessActionsPage() {
         >
           <Link
             href="/verify"
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Verify Employees
           </Link>
@@ -770,8 +770,8 @@ function FilterButton({
       onClick={onClick}
       className={`rounded-lg px-4 py-2 text-sm transition ${
         active
-          ? "bg-cyan-400 font-semibold text-slate-950"
-          : "border border-slate-700 text-slate-300 hover:bg-slate-800"
+          ? "bg-cyan-400 font-semibold text-slate-950 hover:bg-cyan-300 hover:text-slate-950"
+          : "border border-slate-700 text-slate-300 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
       {children}

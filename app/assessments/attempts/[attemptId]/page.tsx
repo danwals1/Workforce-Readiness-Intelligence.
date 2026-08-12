@@ -393,7 +393,7 @@ export default function AssessmentAttemptPage() {
       onClick={() =>
         router.push("/assessments")
       }
-      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+      className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
     >
       ← Assessments
     </button>
@@ -535,7 +535,7 @@ export default function AssessmentAttemptPage() {
                 type="button"
                 onClick={goBack}
                 disabled={currentIndex === 0}
-                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 ← Back
               </button>

@@ -839,7 +839,7 @@ return (
         >
           <Link
             href={`/employees/${plan.employee_id}`}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Employee Profile
           </Link>
@@ -902,7 +902,7 @@ return (
                   type="button"
                   onClick={closeCancelPlan}
                   disabled={cancellingPlan}
-                  className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                  className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
                 >
                   Keep Plan
                 </button>
@@ -943,7 +943,7 @@ return (
                 type="button"
                 onClick={cancelEditPlan}
                 disabled={savingPlan}
-                className="w-fit rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                className="w-fit rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1137,7 +1137,7 @@ return (
                 type="button"
                 onClick={cancelEditPlan}
                 disabled={savingPlan}
-                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
               >
                 Cancel
               </button>

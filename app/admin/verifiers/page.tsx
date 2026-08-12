@@ -395,7 +395,7 @@ export default function ManageVerifiersPage() {
           {isIntegrateAdmin && (
             <Link
               href="/admin/library"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
             >
               Master Library
             </Link>

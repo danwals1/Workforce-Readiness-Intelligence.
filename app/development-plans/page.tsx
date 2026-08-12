@@ -731,7 +731,7 @@ const counts = useMemo(() => {
         >
           <Link
             href="/readiness-actions"
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Readiness Actions
           </Link>
@@ -1021,7 +1021,7 @@ const counts = useMemo(() => {
                 onClick={() =>
                   setShowCreatePlan(false)
                 }
-                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
               >
                 Cancel
               </button>
@@ -1620,7 +1620,7 @@ function FilterButton({
       className={`rounded-lg px-4 py-2 text-sm transition ${
         active
           ? "bg-cyan-400 font-semibold text-slate-950"
-          : "border border-slate-700 text-slate-300 hover:bg-slate-800"
+          : "border border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
       }`}
     >
       {children}

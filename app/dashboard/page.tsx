@@ -308,7 +308,7 @@ export default function DashboardPage() {
 
           <button
             onClick={handleLogout}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Sign Out
           </button>

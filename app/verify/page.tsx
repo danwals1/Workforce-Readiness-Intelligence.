@@ -102,7 +102,7 @@ export default function VerifyPage() {
         >
           <Link
             href="/assessments"
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Assessments
           </Link>
@@ -218,7 +218,7 @@ export default function VerifyPage() {
 
                         <Link
                           href={`/employees/${employee.employee_id}`}
-                          className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                          className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
                         >
                           Employee Profile
                         </Link>
