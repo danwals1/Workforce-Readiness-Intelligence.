@@ -85,19 +85,43 @@ type NewActivityDraft = {
 
 type ResolutionEvidence = {
   development_plan_id: string;
+  action_type: string;
   resolution_status: string;
+  resolved_at: string | null;
+
+  evidence_type: "safety" | "knowledge" | null;
+
+  master_competency_template_id: string | null;
+  competency_name_snapshot: string | null;
+
   initial_attempt_id: string | null;
+
   initial_safety_questions: number;
   initial_safety_correct: number;
   initial_safety_score_percent: number | null;
+
   reassessment_attempt_id: string | null;
   reassessment_completed_at: string | null;
+
   reassessment_safety_questions: number;
   reassessment_safety_correct: number;
   reassessment_safety_score_percent: number | null;
-  required_safety_threshold_percent: number;
+
+  required_safety_threshold_percent: number | null;
+
+  initial_score_percent: number | null;
+  reassessment_score_percent: number | null;
+  required_score_percent: number | null;
+
+  initial_knowledge_score_percent: number | null;
+  initial_knowledge_level: number | null;
+
+  reassessment_knowledge_score_percent: number | null;
+  reassessment_knowledge_level: number | null;
+
+  required_level: number | null;
+
   reassessment_passed: boolean | null;
-  resolved_at: string | null;
 };
 
 type PracticalEvidence = {
@@ -494,7 +518,12 @@ async function loadResolutionEvidence() {
     .from("v_development_plan_resolution_evidence")
     .select(`
       development_plan_id,
+      action_type,
       resolution_status,
+      resolved_at,
+      evidence_type,
+      master_competency_template_id,
+      competency_name_snapshot,
       initial_attempt_id,
       initial_safety_questions,
       initial_safety_correct,
@@ -505,8 +534,15 @@ async function loadResolutionEvidence() {
       reassessment_safety_correct,
       reassessment_safety_score_percent,
       required_safety_threshold_percent,
-      reassessment_passed,
-      resolved_at
+      initial_score_percent,
+      reassessment_score_percent,
+      required_score_percent,
+      initial_knowledge_score_percent,
+      initial_knowledge_level,
+      reassessment_knowledge_score_percent,
+      reassessment_knowledge_level,
+      required_level,
+      reassessment_passed
     `)
     .eq("development_plan_id", planId)
     .maybeSingle();
@@ -1291,145 +1327,264 @@ plan.activities_total === 0
           </div>
         </section>
 
-{resolutionEvidence &&
-  resolutionEvidence.initial_safety_score_percent !== null && (
-    <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Resolution Evidence
-          </p>
+{resolutionEvidence && resolutionEvidence.evidence_type && (
+  <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          Resolution Evidence
+        </p>
 
-          <h2 className="mt-2 text-xl font-semibold">
-            Safety Readiness Improvement
-          </h2>
+        <h2 className="mt-2 text-xl font-semibold">
+          {resolutionEvidence.evidence_type === "safety"
+            ? "Safety Readiness Improvement"
+            : "Knowledge Readiness Improvement"}
+        </h2>
 
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            This development plan was created from a critical safety
-            readiness gap. The scores below show the original assessment
-            result and the targeted reassessment used to determine
-            resolution.
-          </p>
-        </div>
-
-        {resolutionEvidence.reassessment_passed === true && (
-          <span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300">
-            Requirement Satisfied
-          </span>
-        )}
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+          {resolutionEvidence.evidence_type === "safety"
+            ? "This development plan was created from a critical safety readiness gap. The evidence below compares the original assessment with the targeted safety reassessment used to determine resolution."
+            : `This development plan was created from a knowledge readiness gap${
+                resolutionEvidence.competency_name_snapshot
+                  ? ` in ${resolutionEvidence.competency_name_snapshot}`
+                  : ""
+              }. The evidence below compares the original competency result with the targeted reassessment used to determine resolution.`}
+        </p>
       </div>
 
-      <div className="mt-7 grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-          <p className="text-sm text-slate-500">
-            Initial Safety Score
-          </p>
+      {resolutionEvidence.reassessment_passed === true && (
+        <span className="w-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300">
+          Requirement Satisfied
+        </span>
+      )}
+    </div>
 
-          <p className="mt-2 text-4xl font-bold">
-            {resolutionEvidence.initial_safety_score_percent}%
-          </p>
-
-          <p className="mt-2 text-xs text-slate-500">
-            {resolutionEvidence.initial_safety_correct} of{" "}
-            {resolutionEvidence.initial_safety_questions} critical
-            safety questions correct
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-          <p className="text-sm text-slate-500">
-            Targeted Reassessment
-          </p>
-
-          <p
-            className={`mt-2 text-4xl font-bold ${
-              resolutionEvidence.reassessment_passed
-                ? "text-emerald-300"
-                : "text-white"
-            }`}
-          >
-            {resolutionEvidence.reassessment_safety_score_percent !== null
-              ? `${resolutionEvidence.reassessment_safety_score_percent}%`
-              : "Pending"}
-          </p>
-
-          {resolutionEvidence.reassessment_attempt_id && (
-            <p className="mt-2 text-xs text-slate-500">
-              {resolutionEvidence.reassessment_safety_correct} of{" "}
-              {resolutionEvidence.reassessment_safety_questions} targeted
-              safety questions correct
+    {resolutionEvidence.evidence_type === "safety" ? (
+      <>
+        <div className="mt-7 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Initial Safety Score
             </p>
-          )}
+
+            <p className="mt-2 text-4xl font-bold">
+              {resolutionEvidence.initial_score_percent !== null
+                ? `${resolutionEvidence.initial_score_percent}%`
+                : "Unavailable"}
+            </p>
+
+            {resolutionEvidence.initial_safety_questions > 0 && (
+              <p className="mt-2 text-xs text-slate-500">
+                {resolutionEvidence.initial_safety_correct} of{" "}
+                {resolutionEvidence.initial_safety_questions} critical
+                safety questions correct
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Targeted Reassessment
+            </p>
+
+            <p
+              className={`mt-2 text-4xl font-bold ${
+                resolutionEvidence.reassessment_passed === true
+                  ? "text-emerald-300"
+                  : "text-white"
+              }`}
+            >
+              {resolutionEvidence.reassessment_score_percent !== null
+                ? `${resolutionEvidence.reassessment_score_percent}%`
+                : "Pending"}
+            </p>
+
+            {resolutionEvidence.reassessment_attempt_id &&
+              resolutionEvidence.reassessment_safety_questions > 0 && (
+                <p className="mt-2 text-xs text-slate-500">
+                  {resolutionEvidence.reassessment_safety_correct} of{" "}
+                  {resolutionEvidence.reassessment_safety_questions} targeted
+                  safety questions correct
+                </p>
+              )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Required Threshold
+            </p>
+
+            <p className="mt-2 text-4xl font-bold">
+              {resolutionEvidence.required_score_percent !== null
+                ? `${resolutionEvidence.required_score_percent}%`
+                : "—"}
+            </p>
+
+            <p className="mt-2 text-xs text-slate-500">
+              Minimum targeted safety score required to close the gap
+            </p>
+          </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
-          <p className="text-sm text-slate-500">
-            Required Threshold
-          </p>
-
-          <p className="mt-2 text-4xl font-bold">
-            {resolutionEvidence.required_safety_threshold_percent}%
-          </p>
-
-          <p className="mt-2 text-xs text-slate-500">
-            Minimum score required to close the safety gap
-          </p>
-        </div>
-      </div>
-
-      {resolutionEvidence.reassessment_passed === true &&
-        resolutionEvidence.reassessment_safety_score_percent !== null &&
-        resolutionEvidence.initial_safety_score_percent !== null && (
-          <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-semibold text-emerald-300">
-                  ✓ Safety requirement satisfied
-                </p>
-
-                <p className="mt-1 text-sm text-emerald-200/70">
-                  Improved{" "}
-                  {(
-                    resolutionEvidence.reassessment_safety_score_percent -
-                    resolutionEvidence.initial_safety_score_percent
-                  ).toFixed(1)}{" "}
-                  percentage points from the initial assessment.
-                </p>
-              </div>
-
-              <div className="text-sm text-slate-400 sm:text-right">
-                {resolutionEvidence.resolved_at && (
-                  <p>
-                    Resolved{" "}
-                    {formatDateTime(resolutionEvidence.resolved_at)}
+        {resolutionEvidence.reassessment_passed === true &&
+          resolutionEvidence.reassessment_score_percent !== null &&
+          resolutionEvidence.initial_score_percent !== null && (
+            <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-emerald-300">
+                    ✓ Safety requirement satisfied
                   </p>
-                )}
 
-                {resolutionEvidence.reassessment_completed_at && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Reassessment completed{" "}
-                    {formatDateTime(
-                      resolutionEvidence.reassessment_completed_at
-                    )}
+                  <p className="mt-1 text-sm text-emerald-200/70">
+                    Improved{" "}
+                    {(
+                      resolutionEvidence.reassessment_score_percent -
+                      resolutionEvidence.initial_score_percent
+                    ).toFixed(1)}{" "}
+                    percentage points from the initial assessment.
                   </p>
-                )}
+                </div>
+
+                <div className="text-sm text-slate-400 sm:text-right">
+                  {resolutionEvidence.resolved_at && (
+                    <p>
+                      Resolved{" "}
+                      {formatDateTime(resolutionEvidence.resolved_at)}
+                    </p>
+                  )}
+
+                  {resolutionEvidence.reassessment_completed_at && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Reassessment completed{" "}
+                      {formatDateTime(
+                        resolutionEvidence.reassessment_completed_at
+                      )}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+      </>
+    ) : (
+      <>
+        <div className="mt-7 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Initial Knowledge
+            </p>
 
-      {resolutionEvidence.reassessment_attempt_id && (
-        <div className="mt-5">
-          <Link
-            href={`/assessments/attempts/${resolutionEvidence.reassessment_attempt_id}/results`}
-            className="text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
-          >
-            View Reassessment Results →
-          </Link>
+            <p className="mt-2 text-4xl font-bold">
+              {resolutionEvidence.initial_knowledge_level !== null
+                ? `Level ${resolutionEvidence.initial_knowledge_level}`
+                : "Unavailable"}
+            </p>
+
+            {resolutionEvidence.initial_knowledge_score_percent !== null && (
+              <p className="mt-2 text-xs text-slate-500">
+                {resolutionEvidence.initial_knowledge_score_percent}% knowledge
+                score on the original assessment
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Targeted Reassessment
+            </p>
+
+            <p
+              className={`mt-2 text-4xl font-bold ${
+                resolutionEvidence.reassessment_passed === true
+                  ? "text-emerald-300"
+                  : "text-white"
+              }`}
+            >
+              {resolutionEvidence.reassessment_knowledge_level !== null
+                ? `Level ${resolutionEvidence.reassessment_knowledge_level}`
+                : "Pending"}
+            </p>
+
+            {resolutionEvidence.reassessment_knowledge_score_percent !== null && (
+              <p className="mt-2 text-xs text-slate-500">
+                {resolutionEvidence.reassessment_knowledge_score_percent}%
+                knowledge score on the targeted reassessment
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-500">
+              Required Level
+            </p>
+
+            <p className="mt-2 text-4xl font-bold">
+              {resolutionEvidence.required_level !== null
+                ? `Level ${resolutionEvidence.required_level}`
+                : "—"}
+            </p>
+
+            <p className="mt-2 text-xs text-slate-500">
+              Minimum demonstrated knowledge level required to close the gap
+            </p>
+          </div>
         </div>
-      )}
-    </section>
-  )}                
+
+        {resolutionEvidence.reassessment_passed === true &&
+          resolutionEvidence.reassessment_knowledge_level !== null &&
+          resolutionEvidence.initial_knowledge_level !== null && (
+            <div className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-emerald-300">
+                    ✓ Knowledge requirement satisfied
+                  </p>
+
+                  <p className="mt-1 text-sm text-emerald-200/70">
+                    Demonstrated knowledge improved from Level{" "}
+                    {resolutionEvidence.initial_knowledge_level} to Level{" "}
+                    {resolutionEvidence.reassessment_knowledge_level}.
+                    {resolutionEvidence.required_level !== null &&
+                      ` Required Level ${resolutionEvidence.required_level}.`}
+                  </p>
+                </div>
+
+                <div className="text-sm text-slate-400 sm:text-right">
+                  {resolutionEvidence.resolved_at && (
+                    <p>
+                      Resolved{" "}
+                      {formatDateTime(resolutionEvidence.resolved_at)}
+                    </p>
+                  )}
+
+                  {resolutionEvidence.reassessment_completed_at && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Reassessment completed{" "}
+                      {formatDateTime(
+                        resolutionEvidence.reassessment_completed_at
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+      </>
+    )}
+
+    {resolutionEvidence.reassessment_attempt_id && (
+      <div className="mt-5">
+        <Link
+          href={`/assessments/attempts/${resolutionEvidence.reassessment_attempt_id}/results`}
+          className="text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
+        >
+          View Reassessment Results →
+        </Link>
+      </div>
+    )}
+  </section>
+)}
 
 {practicalEvidence && (
   <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
