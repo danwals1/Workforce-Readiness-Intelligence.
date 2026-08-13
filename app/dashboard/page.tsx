@@ -29,6 +29,22 @@ type EmployeeWithReadiness = Employee & {
   readiness: Readiness | null;
 };
 
+type WorkforceReadinessRow = {
+  employee_id: string;
+  client_id: string;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+  assessment_id: string | null;
+  readiness_percent: number | null;
+  readiness_status: string | null;
+  competencies_ready: number | null;
+  competencies_total: number | null;
+  current_gap_count: number;
+  open_plan_count: number;
+  awaiting_evidence_count: number;
+};
+
 type VerificationAssignment = {
   employee_id: string;
 };
@@ -59,6 +75,9 @@ export default function DashboardPage() {
   const [message, setMessage] = useState("Loading...");
   const [isIntegrateAdmin, setIsIntegrateAdmin] = useState(false);
   const [isClientAdmin, setIsClientAdmin] = useState(false);
+  const [workforceReadiness, setWorkforceReadiness] =
+    useState<WorkforceReadinessRow[]>([]);
+
   const [verificationAssignments, setVerificationAssignments] = useState<
     VerificationAssignment[]
   >([]);
@@ -213,6 +232,73 @@ export default function DashboardPage() {
           (verifierData ?? []) as VerificationAssignment[]
         );
       }
+
+      if (integrateAdmin || clientAdmin) {
+        const {
+          data: workforceData,
+          error: workforceError,
+        } = await supabase.rpc(
+          "wri_list_workforce_readiness"
+        );
+
+        if (workforceError) {
+          console.error(
+            "Unable to load workforce readiness:",
+            workforceError
+          );
+          setWorkforceReadiness([]);
+          setEmployees([]);
+          setMessage(workforceError.message);
+          return;
+        }
+
+        const workforceRows =
+          (workforceData ?? []) as WorkforceReadinessRow[];
+
+        setWorkforceReadiness(workforceRows);
+
+        setEmployees(
+          workforceRows.map((row) => ({
+            id: row.employee_id,
+            first_name: row.first_name,
+            last_name: row.last_name,
+            employee_number: row.employee_number,
+            client_id: row.client_id,
+            auth_user_id: null,
+            readiness:
+              row.assessment_id !== null &&
+              row.readiness_percent !== null
+                ? {
+                    employee_id: row.employee_id,
+                    status:
+                      row.readiness_status ??
+                      "not_assessed",
+                    readiness_percent: Number(
+                      row.readiness_percent
+                    ),
+                    requirements_met: Number(
+                      row.competencies_ready ?? 0
+                    ),
+                    requirements_total: Number(
+                      row.competencies_total ?? 0
+                    ),
+                    competencies_met: Number(
+                      row.competencies_ready ?? 0
+                    ),
+                    competencies_total: Number(
+                      row.competencies_total ?? 0
+                    ),
+                    created_at: "",
+                  }
+                : null,
+          }))
+        );
+
+        setMessage("");
+        return;
+      }
+
+      setWorkforceReadiness([]);
 
       let employeeQuery = supabase
         .from("employees")
@@ -378,6 +464,28 @@ export default function DashboardPage() {
     ).length;
 
 
+  const workforceCurrentGaps =
+    workforceReadiness.reduce(
+      (sum, row) =>
+        sum + Number(row.current_gap_count ?? 0),
+      0
+    );
+
+  const workforceOpenPlans =
+    workforceReadiness.reduce(
+      (sum, row) =>
+        sum + Number(row.open_plan_count ?? 0),
+      0
+    );
+
+  const workforceAwaitingEvidence =
+    workforceReadiness.reduce(
+      (sum, row) =>
+        sum +
+        Number(row.awaiting_evidence_count ?? 0),
+      0
+    );
+
   const openDevelopmentPlans =
     developmentPlans.filter(
       (plan) =>
@@ -407,14 +515,11 @@ export default function DashboardPage() {
 
 
   const employeesWithOpenWork =
-    new Set([
-      ...readinessActions.map(
-        (action) => action.employee_id
-      ),
-      ...openDevelopmentPlans.map(
-        (plan) => plan.employee_id
-      ),
-    ]).size;
+    workforceReadiness.filter(
+      (row) =>
+        Number(row.current_gap_count ?? 0) > 0 ||
+        Number(row.open_plan_count ?? 0) > 0
+    ).length;
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -493,8 +598,8 @@ export default function DashboardPage() {
               )}
 
             {canManageOrganization && (
-              <a
-                href="#team-readiness"
+              <Link
+                href="/workforce-readiness"
                 className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
               >
                 <p className="text-sm font-medium text-cyan-400">
@@ -511,9 +616,9 @@ export default function DashboardPage() {
                 </p>
 
                 <p className="mt-5 text-sm font-medium text-cyan-400">
-                  View Team Readiness ↓
+                  Open Workforce Readiness →
                 </p>
-              </a>
+              </Link>
             )}
 
             <Link
@@ -747,9 +852,9 @@ export default function DashboardPage() {
 
               <DashboardMetric
                 label="Current Gaps"
-                value={readinessActions.length}
+                value={workforceCurrentGaps}
                 valueClass={
-                  readinessActions.length > 0
+                  workforceCurrentGaps > 0
                     ? "text-amber-300"
                     : ""
                 }
@@ -757,10 +862,10 @@ export default function DashboardPage() {
 
               <DashboardMetric
                 label="Open Plans"
-                value={openDevelopmentPlans.length}
+                value={workforceOpenPlans}
                 detail={`${developmentInProgressCount} in development`}
                 valueClass={
-                  openDevelopmentPlans.length > 0
+                  workforceOpenPlans > 0
                     ? "text-cyan-300"
                     : ""
                 }
@@ -768,10 +873,10 @@ export default function DashboardPage() {
 
               <DashboardMetric
                 label="Awaiting Evidence"
-                value={awaitingEvidenceCount}
+                value={workforceAwaitingEvidence}
                 detail={`${employeesWithOpenWork} employees with open work`}
                 valueClass={
-                  awaitingEvidenceCount > 0
+                  workforceAwaitingEvidence > 0
                     ? "text-amber-300"
                     : ""
                 }
@@ -779,6 +884,13 @@ export default function DashboardPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href="/workforce-readiness"
+                className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+              >
+                Open Workforce Readiness
+              </Link>
+
               <Link
                 href="/readiness-actions"
                 className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
