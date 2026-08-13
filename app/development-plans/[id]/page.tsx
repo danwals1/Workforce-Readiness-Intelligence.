@@ -979,6 +979,9 @@ await refreshWorkspace();
       case "awaiting_reverification":
         return "bg-orange-500/15 text-orange-300";
 
+      case "awaiting_target_readiness":
+        return "bg-amber-500/15 text-amber-300";
+
       case "resolved":
         return "bg-emerald-500/15 text-emerald-300";
 
@@ -1004,6 +1007,9 @@ await refreshWorkspace();
       case "awaiting_reverification":
         return "Complete Practical Reverification";
 
+      case "awaiting_target_readiness":
+        return "Continue Building Target Role Evidence";
+
       case "resolved":
         return "No Further Action Required";
 
@@ -1026,6 +1032,8 @@ await refreshWorkspace();
         "awaiting_verification" ||
       currentPlan.resolution_status ===
         "awaiting_reverification" ||
+      currentPlan.resolution_status ===
+        "awaiting_target_readiness" ||
       currentPlan.resolution_status ===
         "resolved"
     ) {
@@ -1053,7 +1061,17 @@ await refreshWorkspace();
       case "awaiting_reverification":
         return "Development complete · practical reverification required";
 
+      case "awaiting_target_readiness":
+        return "Development complete · target-role evidence still required";
+
       case "resolved":
+        if (
+          currentPlan.origin ===
+          "role_comparison"
+        ) {
+          return "Assigned development complete · target-role readiness reached";
+        }
+
         return "Development and required evidence complete";
 
       case "cancelled":
@@ -1070,14 +1088,37 @@ await refreshWorkspace();
   ) {
     if (
       currentPlan.origin ===
-        "role_comparison" &&
-      currentPlan.resolution_status ===
-        "development_in_progress"
+      "role_comparison"
     ) {
-      return currentPlan
-        .target_role_name_snapshot
-        ? `Complete the development activities below to build readiness for ${currentPlan.target_role_name_snapshot}.`
-        : "Complete the development activities below to build readiness for the target role.";
+      if (
+        currentPlan.resolution_status ===
+        "development_in_progress"
+      ) {
+        return currentPlan
+          .target_role_name_snapshot
+          ? `Complete the development activities below to build readiness for ${currentPlan.target_role_name_snapshot}.`
+          : "Complete the development activities below to build readiness for the target role.";
+      }
+
+      if (
+        currentPlan.resolution_status ===
+        "awaiting_target_readiness"
+      ) {
+        return currentPlan
+          .target_role_name_snapshot
+          ? `Assigned development work is complete. Additional assessment or practical verification evidence is still required to establish full readiness for ${currentPlan.target_role_name_snapshot}.`
+          : "Assigned development work is complete. Additional assessment or practical verification evidence is still required to establish full readiness for the target role.";
+      }
+
+      if (
+        currentPlan.resolution_status ===
+        "resolved"
+      ) {
+        return currentPlan
+          .target_role_name_snapshot
+          ? `Assigned development work is complete and competency evidence reached full readiness for ${currentPlan.target_role_name_snapshot}. This does not automatically change the employee's assigned role.`
+          : "Assigned development work is complete and competency evidence reached full readiness for the target role. This does not automatically change the employee's assigned role.";
+      }
     }
 
     const status =
@@ -2147,10 +2188,19 @@ Next Required Action
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-xl font-semibold">
                   {plan.origin ===
-                    "role_comparison" &&
-                  plan.resolution_status ===
-                    "development_in_progress"
-                    ? "Build Target Role Readiness"
+                  "role_comparison"
+                    ? plan.resolution_status ===
+                      "development_in_progress"
+                      ? "Build Target Role Readiness"
+                      : plan.resolution_status ===
+                        "awaiting_target_readiness"
+                        ? "Development Complete — Awaiting Target Readiness"
+                        : plan.resolution_status ===
+                          "resolved"
+                          ? "Role Development Goal Reached"
+                          : nextActionLabel(
+                              plan.resolution_status
+                            )
                     : nextActionLabel(
                         plan.resolution_status
                       )}
