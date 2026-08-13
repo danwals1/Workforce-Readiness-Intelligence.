@@ -505,11 +505,32 @@ const counts = useMemo(() => {
           )
       ).length;
 
+    const developmentInProgress =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "development_in_progress"
+      ).length;
+
+    const awaitingReassessment =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "awaiting_reassessment"
+      ).length;
+
     const awaitingVerification =
       plans.filter(
         (plan) =>
           plan.resolution_status ===
           "awaiting_verification"
+      ).length;
+
+    const awaitingReverification =
+      plans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "awaiting_reverification"
       ).length;
 
     const overdue =
@@ -541,7 +562,10 @@ const counts = useMemo(() => {
 
     return {
       openPlans,
+      developmentInProgress,
+      awaitingReassessment,
       awaitingVerification,
+      awaitingReverification,
       overdue,
       dueSoon,
       blocked,
@@ -669,15 +693,20 @@ const counts = useMemo(() => {
     status: string
   ) {
     switch (status) {
-      case "resolved":
-        return "bg-emerald-500/15 text-emerald-300";
-
-      case "awaiting_verification":
-      case "awaiting_reverification":
+      case "development_in_progress":
         return "bg-cyan-500/15 text-cyan-300";
 
       case "awaiting_reassessment":
+        return "bg-violet-500/15 text-violet-300";
+
+      case "awaiting_verification":
         return "bg-amber-500/15 text-amber-300";
+
+      case "awaiting_reverification":
+        return "bg-orange-500/15 text-orange-300";
+
+      case "resolved":
+        return "bg-emerald-500/15 text-emerald-300";
 
       case "cancelled":
         return "bg-slate-800 text-slate-400";
@@ -704,6 +733,62 @@ const counts = useMemo(() => {
         return "bg-slate-800 text-slate-300";
     }
   }
+
+  function planNextAction(
+    status: string
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "Complete Development Activities";
+
+      case "awaiting_reassessment":
+        return "Complete Reassessment";
+
+      case "awaiting_verification":
+        return "Complete Practical Verification";
+
+      case "awaiting_reverification":
+        return "Complete Practical Reverification";
+
+      case "resolved":
+        return "No Further Action Required";
+
+      case "cancelled":
+        return "Plan Cancelled";
+
+      default:
+        return "Review Development Plan";
+    }
+  }
+
+
+  function planProgressDetail(
+    plan: DevelopmentPlanResolution
+  ) {
+    switch (plan.resolution_status) {
+      case "development_in_progress":
+        return `${plan.activities_completed}/${plan.activities_total} activities complete`;
+
+      case "awaiting_reassessment":
+        return "Development complete · reassessment required";
+
+      case "awaiting_verification":
+        return "Development complete · practical verification required";
+
+      case "awaiting_reverification":
+        return "Development complete · practical reverification required";
+
+      case "resolved":
+        return "Development and required evidence complete";
+
+      case "cancelled":
+        return "Plan cancelled";
+
+      default:
+        return `${plan.activities_completed}/${plan.activities_total} activities complete`;
+    }
+  }
+
 
   function displayedProgress(
     plan: DevelopmentPlanResolution
@@ -1040,12 +1125,38 @@ const counts = useMemo(() => {
           </section>
         )}
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard
             label="Open Plans"
             value={counts.openPlans}
           />
 
+          <MetricCard
+            label="In Development"
+            value={counts.developmentInProgress}
+            valueClass="text-cyan-300"
+          />
+
+          <MetricCard
+            label="Awaiting Reassessment"
+            value={counts.awaitingReassessment}
+            valueClass="text-violet-300"
+          />
+
+          <MetricCard
+            label="Awaiting Verification"
+            value={counts.awaitingVerification}
+            valueClass="text-amber-300"
+          />
+
+          <MetricCard
+            label="Awaiting Reverification"
+            value={counts.awaitingReverification}
+            valueClass="text-orange-300"
+          />
+        </section>
+
+        <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="Due Soon"
             value={counts.dueSoon}
@@ -1062,6 +1173,12 @@ const counts = useMemo(() => {
             label="Blocked"
             value={counts.blocked}
             valueClass="text-rose-300"
+          />
+
+          <MetricCard
+            label="Resolved"
+            value={counts.resolved}
+            valueClass="text-emerald-300"
           />
         </section>
 
@@ -1484,6 +1601,20 @@ const counts = useMemo(() => {
                             {plan.action_label}
                           </p>
                         )}
+
+                        {isOpenPlan(plan) && (
+                          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              Next Action
+                            </p>
+
+                            <p className="mt-1 text-sm font-medium text-slate-200">
+                              {planNextAction(
+                                plan.resolution_status
+                              )}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="w-full xl:max-w-sm">
@@ -1491,7 +1622,7 @@ const counts = useMemo(() => {
                           <div className="flex items-end justify-between gap-4">
                             <div>
                               <p className="text-sm text-slate-400">
-                                Progress
+                                Development Progress
                               </p>
 
                               <p className="mt-1 text-3xl font-bold">
@@ -1543,12 +1674,7 @@ const counts = useMemo(() => {
                           </div>
 
                           <p className="mt-3 text-xs text-slate-500">
-                            {plan.resolution_status ===
-                              "resolved" &&
-                            plan.activities_total ===
-                              0
-                              ? "Resolved by verification"
-                              : `${plan.activities_completed}/${plan.activities_total} activities complete`}
+                            {planProgressDetail(plan)}
                           </p>
                         </div>
                       </div>
