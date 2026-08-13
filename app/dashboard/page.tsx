@@ -33,6 +33,25 @@ type VerificationAssignment = {
   employee_id: string;
 };
 
+
+type ReadinessActionSummary = {
+  action_key: string;
+  employee_id: string;
+};
+
+
+type DevelopmentPlanLifecycleSummary = {
+  development_plan_id: string;
+  employee_id: string;
+  resolution_status:
+    | "development_in_progress"
+    | "awaiting_reassessment"
+    | "awaiting_verification"
+    | "awaiting_reverification"
+    | "resolved"
+    | "cancelled";
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -43,6 +62,12 @@ export default function DashboardPage() {
   const [verificationAssignments, setVerificationAssignments] = useState<
     VerificationAssignment[]
   >([]);
+
+  const [readinessActions, setReadinessActions] =
+    useState<ReadinessActionSummary[]>([]);
+
+  const [developmentPlans, setDevelopmentPlans] =
+    useState<DevelopmentPlanLifecycleSummary[]>([]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -104,6 +129,72 @@ export default function DashboardPage() {
 
       setIsIntegrateAdmin(integrateAdmin);
       setIsClientAdmin(clientAdmin);
+
+
+      // ----------------------------------------------------------------------
+      // Organization-level operational lifecycle
+      //
+      // Readiness actions = current workforce gaps.
+      // Development plans = committed work that may remain unresolved even
+      // after the current readiness gap disappears.
+      // ----------------------------------------------------------------------
+
+      if (integrateAdmin || clientAdmin) {
+        const [
+          readinessActionResult,
+          developmentPlanResult,
+        ] = await Promise.all([
+          supabase.rpc(
+            "wri_list_readiness_actions",
+            {
+              p_client_id: null,
+              p_employee_id: null,
+              p_action_type: null,
+              p_priority: null,
+            }
+          ),
+
+          supabase.rpc(
+            "wri_list_development_plan_resolutions",
+            {
+              p_employee_id: null,
+              p_resolution_status: null,
+            }
+          ),
+        ]);
+
+        if (readinessActionResult.error) {
+          console.error(
+            "Unable to load readiness actions:",
+            readinessActionResult.error
+          );
+
+          setReadinessActions([]);
+        } else {
+          setReadinessActions(
+            (readinessActionResult.data ?? []) as
+              ReadinessActionSummary[]
+          );
+        }
+
+        if (developmentPlanResult.error) {
+          console.error(
+            "Unable to load development plan lifecycle:",
+            developmentPlanResult.error
+          );
+
+          setDevelopmentPlans([]);
+        } else {
+          setDevelopmentPlans(
+            (developmentPlanResult.data ?? []) as
+              DevelopmentPlanLifecycleSummary[]
+          );
+        }
+      } else {
+        setReadinessActions([]);
+        setDevelopmentPlans([]);
+      }
+
 
       const {
         data: verifierData,
@@ -285,6 +376,45 @@ export default function DashboardPage() {
         employee.readiness?.status
           ?.toUpperCase() === "READY"
     ).length;
+
+
+  const openDevelopmentPlans =
+    developmentPlans.filter(
+      (plan) =>
+        plan.resolution_status !== "resolved" &&
+        plan.resolution_status !== "cancelled"
+    );
+
+
+  const developmentInProgressCount =
+    openDevelopmentPlans.filter(
+      (plan) =>
+        plan.resolution_status ===
+        "development_in_progress"
+    ).length;
+
+
+  const awaitingEvidenceCount =
+    openDevelopmentPlans.filter(
+      (plan) =>
+        plan.resolution_status ===
+          "awaiting_reassessment" ||
+        plan.resolution_status ===
+          "awaiting_verification" ||
+        plan.resolution_status ===
+          "awaiting_reverification"
+    ).length;
+
+
+  const employeesWithOpenWork =
+    new Set([
+      ...readinessActions.map(
+        (action) => action.employee_id
+      ),
+      ...openDevelopmentPlans.map(
+        (plan) => plan.employee_id
+      ),
+    ]).size;
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -575,6 +705,99 @@ export default function DashboardPage() {
         )}
 
         {canManageOrganization && (
+          <section className="mt-12">
+            <div className="mb-5">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Workforce Operations
+              </p>
+
+              <h2 className="mt-2 text-2xl font-semibold">
+                Workforce Action Overview
+              </h2>
+
+              <p className="mt-2 text-sm text-slate-400">
+                Current readiness gaps and unresolved development work requiring management attention.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              <DashboardMetric
+                label="Employees"
+                value={employees.length}
+              />
+
+              <DashboardMetric
+                label="Ready"
+                value={readyEmployees}
+                detail={
+                  employees.length > 0
+                    ? `${readyEmployees}/${employees.length} employees`
+                    : "No employees"
+                }
+              />
+
+              <DashboardMetric
+                label="Avg. Readiness"
+                value={
+                  averageReadiness !== null
+                    ? `${averageReadiness.toFixed(1)}%`
+                    : "—"
+                }
+              />
+
+              <DashboardMetric
+                label="Current Gaps"
+                value={readinessActions.length}
+                valueClass={
+                  readinessActions.length > 0
+                    ? "text-amber-300"
+                    : ""
+                }
+              />
+
+              <DashboardMetric
+                label="Open Plans"
+                value={openDevelopmentPlans.length}
+                detail={`${developmentInProgressCount} in development`}
+                valueClass={
+                  openDevelopmentPlans.length > 0
+                    ? "text-cyan-300"
+                    : ""
+                }
+              />
+
+              <DashboardMetric
+                label="Awaiting Evidence"
+                value={awaitingEvidenceCount}
+                detail={`${employeesWithOpenWork} employees with open work`}
+                valueClass={
+                  awaitingEvidenceCount > 0
+                    ? "text-amber-300"
+                    : ""
+                }
+              />
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href="/readiness-actions"
+                className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+              >
+                Open Readiness Action Center
+              </Link>
+
+              <Link
+                href="/development-plans"
+                className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
+              >
+                Open Development Plans
+              </Link>
+            </div>
+          </section>
+        )}
+
+
+        {canManageOrganization && (
           <section
             id="team-readiness"
             className="mt-12"
@@ -823,3 +1046,36 @@ export default function DashboardPage() {
     </main>
   );
 }
+
+function DashboardMetric({
+  label,
+  value,
+  detail,
+  valueClass = "",
+}: {
+  label: string;
+  value: number | string;
+  detail?: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-semibold ${valueClass}`}
+      >
+        {value}
+      </p>
+
+      {detail && (
+        <p className="mt-2 text-xs text-slate-500">
+          {detail}
+        </p>
+      )}
+    </div>
+  );
+}
+
