@@ -69,6 +69,11 @@ type DevelopmentPlanSummary = {
   competency_name_snapshot: string | null;
   title: string;
   status: string;
+  resolution_status: string | null;
+  development_completed_at: string | null;
+  awaiting_evidence_since: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
   priority: string;
   due_date: string | null;
   activities_total: number;
@@ -442,6 +447,34 @@ export default function EmployeePage() {
     }
   }
 
+  function resolutionStatusLabel(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "Development In Progress";
+
+      case "awaiting_reassessment":
+        return "Awaiting Reassessment";
+
+      case "awaiting_verification":
+        return "Awaiting Verification";
+
+      case "awaiting_reverification":
+        return "Awaiting Reverification";
+
+      case "resolved":
+        return "Resolved";
+
+      case "cancelled":
+        return "Cancelled";
+
+      default:
+        return status ?? "Development In Progress";
+    }
+  }
+
+
   function verificationStatusClasses(
     status: string
   ) {
@@ -519,22 +552,23 @@ function displayedPlanProgress(
 }
 
   const openDevelopmentPlans = useMemo(
-  () =>
-    developmentPlans.filter(
-      (plan) =>
-        plan.status !== "completed" &&
-        plan.status !== "cancelled"
-    ),
-  [developmentPlans]
-);
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status !== "resolved" &&
+          plan.resolution_status !== "cancelled"
+      ),
+    [developmentPlans]
+  );
 
-const resolvedDevelopmentPlans = useMemo(
-  () =>
-    developmentPlans.filter(
-      (plan) => plan.status === "completed"
-    ),
-  [developmentPlans]
-);
+  const resolvedDevelopmentPlans = useMemo(
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status === "resolved"
+      ),
+    [developmentPlans]
+  );
 
 const uniqueVerifiedCompetencies =
     useMemo(
@@ -883,17 +917,9 @@ const uniqueVerifiedCompetencies =
                 <div>
                   <div className="flex flex-wrap gap-2">
                     <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
-                      {plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
-                      plan.activities_total === 0
-                        ? "Awaiting Verification"
-                        : plan.status
-                            .split("_")
-                            .map(
-                              (word) =>
-                                word.charAt(0).toUpperCase() +
-                                word.slice(1)
-                            )
-                            .join(" ")}
+                      {resolutionStatusLabel(
+                        plan.resolution_status
+                      )}
                     </span>
 
                     <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
