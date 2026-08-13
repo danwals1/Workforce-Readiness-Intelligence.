@@ -46,6 +46,19 @@ type ReadinessAction = {
 };
 
 
+type PracticalResolutionEvidence = {
+  development_plan_id: string;
+  resolution_status: string;
+  evidence_type: "practical_verification" | "reverification";
+  evidence_required_since: string | null;
+  required_level: number | null;
+  verified_level: number | null;
+  verified_at: string | null;
+  verification_satisfied: boolean;
+  resolved_at: string | null;
+};
+
+
 type RegressionEvent = {
   id: string;
   event_at: string;
@@ -130,6 +143,9 @@ export default function SystemTestingPage() {
 
   const [readinessActions, setReadinessActions] =
     useState<ReadinessAction[]>([]);
+
+  const [practicalResolutionEvidence, setPracticalResolutionEvidence] =
+    useState<PracticalResolutionEvidence[]>([]);
 
 
   const [history, setHistory] =
@@ -228,6 +244,7 @@ export default function SystemTestingPage() {
       setPlans([]);
       setActivities([]);
       setReadinessActions([]);
+      setPracticalResolutionEvidence([]);
       setMessage("");
       setLastLoadedAt(new Date());
       setLoading(false);
@@ -242,6 +259,7 @@ export default function SystemTestingPage() {
     const [
       plansResult,
       readinessResult,
+      practicalEvidenceResult,
       historyResult,
     ] = await Promise.all([
       supabase
@@ -273,6 +291,21 @@ export default function SystemTestingPage() {
           master_competency_template_id,
           action_type,
           action_label
+        `)
+        .in("employee_id", employeeIds),
+
+      supabase
+        .from("v_development_plan_practical_evidence")
+        .select(`
+          development_plan_id,
+          resolution_status,
+          evidence_type,
+          evidence_required_since,
+          required_level,
+          verified_level,
+          verified_at,
+          verification_satisfied,
+          resolved_at
         `)
         .in("employee_id", employeeIds),
 
@@ -315,11 +348,21 @@ export default function SystemTestingPage() {
       return;
     }
 
+    if (practicalEvidenceResult.error) {
+      setMessage(practicalEvidenceResult.error.message);
+      setLoading(false);
+      return;
+    }
+
     if (historyResult.error) {
       setMessage(historyResult.error.message);
       setLoading(false);
       return;
     }
+
+    setPracticalResolutionEvidence(
+      (practicalEvidenceResult.data ?? []) as PracticalResolutionEvidence[]
+    );
 
     setHistory(
       (historyResult.data ?? []) as RegressionEvent[]
@@ -454,6 +497,75 @@ export default function SystemTestingPage() {
         brokenResolvedPlans.length === 0
           ? "Resolved plan timestamps are consistent."
           : `${brokenResolvedPlans.length} resolved plan(s) have inconsistent lifecycle timestamps.`,
+    });
+
+
+    const practicalEvidenceViolations =
+      plans.filter((plan) => {
+        const isPracticalPlan =
+          plan.action_type ===
+            "PRACTICAL_VERIFICATION_NEEDED" ||
+          plan.action_type ===
+            "PRACTICAL_DEVELOPMENT_NEEDED" ||
+          plan.action_type ===
+            "REVERIFICATION_DUE_SOON" ||
+          plan.action_type ===
+            "REVERIFICATION_REQUIRED";
+
+        if (
+          !isPracticalPlan ||
+          plan.resolution_status !== "resolved"
+        ) {
+          return false;
+        }
+
+        const evidence =
+          practicalResolutionEvidence.find(
+            (row) =>
+              row.development_plan_id === plan.id
+          );
+
+        if (!evidence) {
+          return true;
+        }
+
+        if (
+          evidence.verification_satisfied !== true ||
+          evidence.verified_at === null ||
+          plan.resolved_at === null ||
+          plan.development_completed_at === null
+        ) {
+          return true;
+        }
+
+        if (
+          evidence.verified_at !== plan.resolved_at
+        ) {
+          return true;
+        }
+
+        return (
+          new Date(evidence.verified_at).getTime() <
+          new Date(
+            plan.development_completed_at
+          ).getTime()
+        );
+      });
+
+
+    nextChecks.push({
+      id: "practical-resolution-evidence",
+      name: "Practical Resolution Evidence Integrity",
+      description:
+        "Resolved practical and reverification plans must be tied to qualifying verification evidence recorded after development completion.",
+      status:
+        practicalEvidenceViolations.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        practicalEvidenceViolations.length === 0
+          ? "Resolved practical plans are bound to valid qualifying verification evidence."
+          : `${practicalEvidenceViolations.length} resolved practical or reverification plan(s) have invalid or mismatched resolution evidence.`,
     });
 
     const brokenWaitingPlans =
@@ -678,6 +790,7 @@ export default function SystemTestingPage() {
     plans,
     activities,
     readinessActions,
+    practicalResolutionEvidence,
   ]);
 
   const scenarioCoverage =
