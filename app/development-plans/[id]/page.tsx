@@ -2275,7 +2275,11 @@ Next Required Action
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Development Type</p>
-              <p className="mt-2 font-semibold">{typeLabel(plan.development_type)}</p>
+              <p className="mt-2 font-semibold">
+                {plan.origin === "role_comparison"
+                  ? "Role Development"
+                  : typeLabel(plan.development_type)}
+              </p>
             </div>
             {plan.manager_notes && (
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
