@@ -2381,6 +2381,34 @@ Next Required Action
                             </div>
                           )}
 
+                        {plan.origin === "role_comparison" &&
+                          activity.master_competency_template_id &&
+                          activity.target_status_snapshot === "not_assessed" && (
+                            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-amber-200">
+                                    Assessment Content Needed
+                                  </p>
+
+                                  <p className="mt-1 text-sm leading-6 text-slate-400">
+                                    No published assessment content is currently available to establish knowledge evidence for this target-role competency.
+                                  </p>
+                                </div>
+
+                                {activity.target_required_level_snapshot && (
+                                  <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200">
+                                    Target Level {activity.target_required_level_snapshot}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="mt-3 text-xs text-slate-500">
+                                This activity remains open until valid assessment evidence can be collected.
+                              </p>
+                            </div>
+                          )}
+
                         {activity.completion_notes && (
                           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                             <p className="text-xs font-medium uppercase tracking-wide text-emerald-300">
