@@ -847,24 +847,104 @@ await refreshWorkspace();
   }
 
   function resolutionClasses(status: string) {
-    if (status === "resolved") {
-      return "bg-emerald-500/15 text-emerald-300";
-    }
+    switch (status) {
+      case "development_in_progress":
+        return "bg-cyan-500/15 text-cyan-300";
 
-    if (
-      status === "awaiting_reassessment" ||
-      status === "awaiting_verification" ||
-      status === "awaiting_reverification"
-    ) {
-      return "bg-amber-500/15 text-amber-300";
-    }
+      case "awaiting_reassessment":
+        return "bg-violet-500/15 text-violet-300";
 
-    if (status === "cancelled") {
-      return "bg-slate-200 text-slate-700";
-    }
+      case "awaiting_verification":
+        return "bg-amber-500/15 text-amber-300";
 
-    return "bg-cyan-500/15 text-cyan-300";
+      case "awaiting_reverification":
+        return "bg-orange-500/15 text-orange-300";
+
+      case "resolved":
+        return "bg-emerald-500/15 text-emerald-300";
+
+      case "cancelled":
+        return "bg-slate-800 text-slate-400";
+
+      default:
+        return "bg-slate-800 text-slate-300";
+    }
   }
+
+  function nextActionLabel(status: string) {
+    switch (status) {
+      case "development_in_progress":
+        return "Complete Development Activities";
+
+      case "awaiting_reassessment":
+        return "Complete Reassessment";
+
+      case "awaiting_verification":
+        return "Complete Practical Verification";
+
+      case "awaiting_reverification":
+        return "Complete Practical Reverification";
+
+      case "resolved":
+        return "No Further Action Required";
+
+      case "cancelled":
+        return "Plan Cancelled";
+
+      default:
+        return "Review Development Plan";
+    }
+  }
+
+
+  function developmentProgressPercent(
+    currentPlan: DevelopmentPlan
+  ) {
+    if (
+      currentPlan.resolution_status ===
+        "awaiting_reassessment" ||
+      currentPlan.resolution_status ===
+        "awaiting_verification" ||
+      currentPlan.resolution_status ===
+        "awaiting_reverification" ||
+      currentPlan.resolution_status ===
+        "resolved"
+    ) {
+      return 100;
+    }
+
+    return Number(
+      currentPlan.completion_percent
+    );
+  }
+
+
+  function developmentProgressDetail(
+    currentPlan: DevelopmentPlan
+  ) {
+    switch (
+      currentPlan.resolution_status
+    ) {
+      case "awaiting_reassessment":
+        return "Development complete · reassessment required";
+
+      case "awaiting_verification":
+        return "Development complete · practical verification required";
+
+      case "awaiting_reverification":
+        return "Development complete · practical reverification required";
+
+      case "resolved":
+        return "Development and required evidence complete";
+
+      case "cancelled":
+        return "Plan cancelled";
+
+      default:
+        return `${currentPlan.activities_completed}/${currentPlan.activities_total} activities complete`;
+    }
+  }
+
 
   function resolutionDescription(status: string) {
     if (status === "awaiting_reassessment") {
@@ -961,9 +1041,7 @@ function formatDateTime(value: string | null) {
   }
 
  const displayedProgressPercent =
-  plan.resolution_status === "resolved"
-    ? 100
-    : Number(plan.completion_percent);
+  developmentProgressPercent(plan);
 
 return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -1328,19 +1406,21 @@ return (
             <div className="w-full xl:max-w-sm">
               <div className="rounded-xl bg-slate-950/60 p-5">
                 <div className="flex items-end justify-between">
-                  <div><p className="text-sm text-slate-400">Progress</p><p className="mt-1 text-4xl font-bold">{plan.resolution_status === "awaiting_verification" &&
-plan.activities_total === 0
-  ? "Awaiting Verification"
-  : `${displayedProgressPercent}%`}</p></div>
-                 <p className="text-sm text-slate-400">
-  {plan.resolution_status === "resolved" &&
-plan.activities_total === 0
-  ? "Resolved by verification"
-  : plan.resolution_status === "awaiting_verification" &&
-    plan.activities_total === 0
-    ? "Development requirements complete"
-    : `${plan.activities_completed}/${plan.activities_total} complete`}
-</p>
+                  <div>
+                    <p className="text-sm text-slate-400">
+                      Development Progress
+                    </p>
+
+                    <p className="mt-1 text-4xl font-bold">
+                      {displayedProgressPercent}%
+                    </p>
+                  </div>
+
+                  <p className="max-w-[180px] text-right text-xs leading-5 text-slate-400">
+                    {developmentProgressDetail(
+                      plan
+                    )}
+                  </p>
                 </div>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-800">
                   <div className="h-full rounded-full bg-cyan-400" style={{ width: `${Math.min(100, Math.max(0, Number(displayedProgressPercent)))}%` }} />
@@ -1758,7 +1838,9 @@ Next Required Action
 
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-xl font-semibold">
-                  {plan.resolution_label}
+                  {nextActionLabel(
+                    plan.resolution_status
+                  )}
                 </h2>
 
                 <span
