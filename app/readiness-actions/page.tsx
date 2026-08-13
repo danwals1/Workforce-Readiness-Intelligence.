@@ -41,6 +41,38 @@ type ReadinessAction = {
   verification_currency_status: string | null;
 };
 
+type DevelopmentPlanWork = {
+  development_plan_id: string;
+  employee_id: string;
+  first_name: string;
+  last_name: string;
+  employee_number: string | null;
+
+  action_type: string | null;
+  action_label: string | null;
+
+  master_competency_template_id: string | null;
+  competency_name_snapshot: string | null;
+  role_name_snapshot: string | null;
+
+  title: string;
+  status: string;
+  resolution_status: string | null;
+
+  priority: string;
+  due_date: string | null;
+
+  activities_total: number;
+  activities_completed: number;
+  completion_percent: number;
+  overdue: boolean;
+
+  development_completed_at: string | null;
+  awaiting_evidence_since: string | null;
+  resolved_at: string | null;
+};
+
+
 type PriorityFilter = "all" | "critical" | "high" | "medium";
 type ActionFilter = "all" | "safety" | "practical" | "reverification" | "knowledge";
 
@@ -48,6 +80,10 @@ export default function ReadinessActionsPage() {
   const router = useRouter();
 
   const [actions, setActions] = useState<ReadinessAction[]>([]);
+
+  const [activePlans, setActivePlans] =
+    useState<DevelopmentPlanWork[]>([]);
+
   const [message, setMessage] = useState("Loading readiness actions...");
 
   const [creatingPlanKey, setCreatingPlanKey] =
@@ -94,6 +130,51 @@ export default function ReadinessActionsPage() {
 
   setActions(readinessActions);
 
+
+  // --------------------------------------------------------------------------
+  // Unresolved Development Plan lifecycle work
+  //
+  // Readiness actions answer:
+  //   "What gaps exist now?"
+  //
+  // Development Plans answer:
+  //   "What committed work is still unresolved?"
+  //
+  // These are intentionally separate sources.
+  // --------------------------------------------------------------------------
+
+  const {
+    data: developmentPlanData,
+    error: developmentPlanError,
+  } = await supabase.rpc(
+    "wri_list_development_plans",
+    {
+      p_employee_id: null,
+      p_status: null,
+    }
+  );
+
+  if (developmentPlanError) {
+    console.error(
+      "Active Development Plans failed:",
+      developmentPlanError
+    );
+
+    setActivePlans([]);
+  } else {
+    const allPlans =
+      (developmentPlanData ?? []) as DevelopmentPlanWork[];
+
+    setActivePlans(
+      allPlans.filter(
+        (plan) =>
+          plan.resolution_status !== "resolved" &&
+          plan.resolution_status !== "cancelled"
+      )
+    );
+  }
+
+
   const actionKeys =
     readinessActions
       .map((item) => item.action_key)
@@ -105,12 +186,17 @@ export default function ReadinessActionsPage() {
       error: planError,
     } = await supabase
       .from("development_plans")
-      .select("id, action_key, status")
+      .select(`
+        id,
+        action_key,
+        status,
+        resolution_status
+      `)
       .in("action_key", actionKeys)
       .not(
-        "status",
+        "resolution_status",
         "in",
-        '("completed","cancelled")'
+        '("resolved","cancelled")'
       );
 
     if (planError) {
@@ -127,6 +213,7 @@ export default function ReadinessActionsPage() {
           id: string;
           action_key: string | null;
           status: string;
+          resolution_status: string | null;
         }[]
       ).forEach((plan) => {
         if (
@@ -172,9 +259,46 @@ export default function ReadinessActionsPage() {
   );
 
   const employeeCount = useMemo(
-    () => new Set(actions.map((item) => item.employee_id)).size,
-    [actions]
+    () =>
+      new Set([
+        ...actions.map(
+          (item) => item.employee_id
+        ),
+        ...activePlans.map(
+          (plan) => plan.employee_id
+        ),
+      ]).size,
+    [actions, activePlans]
   );
+
+
+  const openWorkCount =
+    actions.length +
+    activePlans.length;
+
+
+  const awaitingEvidenceCount =
+    activePlans.filter(
+      (plan) =>
+        plan.resolution_status ===
+          "awaiting_reassessment" ||
+        plan.resolution_status ===
+          "awaiting_verification" ||
+        plan.resolution_status ===
+          "awaiting_reverification"
+    ).length;
+
+
+  const activePlanCriticalCount =
+    activePlans.filter(
+      (plan) =>
+        plan.priority === "critical"
+    ).length;
+
+
+  const combinedCriticalCount =
+    criticalCount +
+    activePlanCriticalCount;
 
   const filteredActions = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -271,6 +395,78 @@ export default function ReadinessActionsPage() {
     }
   }
 
+  function resolutionStatusLabel(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "Development In Progress";
+
+      case "awaiting_reassessment":
+        return "Awaiting Reassessment";
+
+      case "awaiting_verification":
+        return "Awaiting Verification";
+
+      case "awaiting_reverification":
+        return "Awaiting Reverification";
+
+      case "resolved":
+        return "Resolved";
+
+      case "cancelled":
+        return "Cancelled";
+
+      default:
+        return status ?? "Development In Progress";
+    }
+  }
+
+
+  function resolutionStatusClasses(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "bg-cyan-500/15 text-cyan-300";
+
+      case "awaiting_reassessment":
+        return "bg-violet-500/15 text-violet-300";
+
+      case "awaiting_verification":
+        return "bg-amber-500/15 text-amber-300";
+
+      case "awaiting_reverification":
+        return "bg-orange-500/15 text-orange-300";
+
+      default:
+        return "bg-slate-800 text-slate-300";
+    }
+  }
+
+
+  function planNextAction(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "Complete Development Activities";
+
+      case "awaiting_reassessment":
+        return "Complete Reassessment";
+
+      case "awaiting_verification":
+        return "Complete Practical Verification";
+
+      case "awaiting_reverification":
+        return "Complete Practical Reverification";
+
+      default:
+        return "Review Development Plan";
+    }
+  }
+
+
   function formatDate(value: string | null) {
     if (!value) return "—";
     return new Date(value).toLocaleDateString();
@@ -279,7 +475,6 @@ export default function ReadinessActionsPage() {
   function actionHref(item: ReadinessAction) {
     if (
       item.action_type === "PRACTICAL_VERIFICATION_NEEDED" ||
-      item.action_type === "PRACTICAL_DEVELOPMENT_NEEDED" ||
       item.action_type === "REVERIFICATION_DUE_SOON" ||
       item.action_type === "REVERIFICATION_REQUIRED"
     ) {
@@ -359,10 +554,15 @@ export default function ReadinessActionsPage() {
     }
 
     if (
-      item.action_type === "PRACTICAL_VERIFICATION_NEEDED" ||
-      item.action_type === "PRACTICAL_DEVELOPMENT_NEEDED"
+      item.action_type === "PRACTICAL_VERIFICATION_NEEDED"
     ) {
       return "Open Verification";
+    }
+
+    if (
+      item.action_type === "PRACTICAL_DEVELOPMENT_NEEDED"
+    ) {
+      return "View Employee";
     }
 
     return "View Employee";
@@ -391,27 +591,220 @@ export default function ReadinessActionsPage() {
           </div>
         )}
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Open Actions" value={actions.length} />
-          <MetricCard label="Employees" value={employeeCount} />
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <MetricCard
-            label="Critical"
-            value={criticalCount}
-            valueClass="text-rose-300"
+            label="Open Work"
+            value={openWorkCount}
           />
+
           <MetricCard
-            label="High"
-            value={highCount}
+            label="Employees"
+            value={employeeCount}
+          />
+
+          <MetricCard
+            label="Readiness Gaps"
+            value={actions.length}
+          />
+
+          <MetricCard
+            label="Active Plans"
+            value={activePlans.length}
+          />
+
+          <MetricCard
+            label="Awaiting Evidence"
+            value={awaitingEvidenceCount}
             valueClass="text-amber-300"
           />
+
           <MetricCard
-            label="Medium"
-            value={mediumCount}
-            valueClass="text-cyan-300"
+            label="Critical"
+            value={combinedCriticalCount}
+            valueClass="text-rose-300"
           />
         </section>
 
-        <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+        <section className="mt-8">
+          <div className="mb-5">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Lifecycle Work
+            </p>
+
+            <h2 className="mt-2 text-2xl font-semibold">
+              Active Development Work
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Development Plans that are still in development or waiting for required evidence.
+            </p>
+          </div>
+
+          {activePlans.length === 0 ? (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center">
+              <p className="font-medium">
+                No unresolved Development Plans.
+              </p>
+
+              <p className="mt-2 text-sm text-slate-400">
+                All committed readiness development work is currently resolved.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {activePlans.map((plan) => (
+                <article
+                  key={plan.development_plan_id}
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
+                >
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${resolutionStatusClasses(
+                            plan.resolution_status
+                          )}`}
+                        >
+                          {resolutionStatusLabel(
+                            plan.resolution_status
+                          )}
+                        </span>
+
+                        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                          {plan.priority
+                            .charAt(0)
+                            .toUpperCase() +
+                            plan.priority.slice(1)}{" "}
+                          Priority
+                        </span>
+
+                        {plan.overdue && (
+                          <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
+                            Overdue
+                          </span>
+                        )}
+                      </div>
+
+                      <Link
+                        href={`/employees/${plan.employee_id}`}
+                        className="mt-4 block text-xl font-semibold transition hover:text-cyan-300"
+                      >
+                        {plan.first_name} {plan.last_name}
+                      </Link>
+
+                      <p className="mt-1 text-sm text-slate-400">
+                        {plan.role_name_snapshot ?? "Role not specified"}
+                        {plan.employee_number
+                          ? ` · ${plan.employee_number}`
+                          : ""}
+                      </p>
+
+                      <h3 className="mt-4 font-semibold text-slate-200">
+                        {plan.competency_name_snapshot ??
+                          plan.title}
+                      </h3>
+
+                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Next Action
+                        </p>
+
+                        <p className="mt-1 font-medium text-slate-200">
+                          {planNextAction(
+                            plan.resolution_status
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="w-full lg:max-w-xs">
+                      <div className="rounded-xl bg-slate-950/50 p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-sm text-slate-400">
+                            Development Progress
+                          </span>
+
+                          <span className="font-semibold">
+                            {plan.status === "completed"
+                              ? 100
+                              : Number(
+                                  plan.completion_percent
+                                )}
+                            %
+                          </span>
+                        </div>
+
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className="h-full rounded-full bg-cyan-400"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.max(
+                                  0,
+                                  plan.status ===
+                                    "completed"
+                                    ? 100
+                                    : Number(
+                                        plan.completion_percent
+                                      )
+                                )
+                              )}%`,
+                            }}
+                          />
+                        </div>
+
+                        <p className="mt-3 text-xs text-slate-500">
+                          {plan.resolution_status ===
+                          "development_in_progress"
+                            ? `${plan.activities_completed}/${plan.activities_total} activities complete`
+                            : `${resolutionStatusLabel(
+                                plan.resolution_status
+                              )} after development completion`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-5">
+                    <p className="text-sm text-slate-400">
+                      {plan.due_date
+                        ? `Due ${new Date(
+                            `${plan.due_date}T12:00:00`
+                          ).toLocaleDateString()}`
+                        : "No due date"}
+                    </p>
+
+                    <Link
+                      href={`/development-plans/${plan.development_plan_id}`}
+                      className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
+                    >
+                      Open Development Plan
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+
+        <div className="mt-10 border-t border-slate-800 pt-8">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Current Gaps
+          </p>
+
+          <h2 className="mt-2 text-2xl font-semibold">
+            Current Readiness Actions
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-400">
+            Current readiness gaps generated from the employee&apos;s latest readiness state.
+          </p>
+        </div>
+
+
+        <section className="mt-5 rounded-2xl border border-slate-800 bg-slate-900 p-5">
           <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>
               <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -519,10 +912,10 @@ export default function ReadinessActionsPage() {
           {filteredActions.length === 0 ? (
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
               <p className="text-lg font-medium">
-                No readiness actions match these filters.
+                No current readiness gaps match these filters.
               </p>
               <p className="mt-2 text-sm text-slate-400">
-                Adjust the filters or search term to see additional actions.
+                This does not include unresolved Development Plan work shown above.
               </p>
             </div>
           ) : (
