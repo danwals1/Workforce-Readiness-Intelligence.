@@ -475,6 +475,59 @@ export default function EmployeePage() {
   }
 
 
+  function resolutionStatusClasses(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "bg-cyan-500/15 text-cyan-300";
+
+      case "awaiting_reassessment":
+        return "bg-violet-500/15 text-violet-300";
+
+      case "awaiting_verification":
+        return "bg-amber-500/15 text-amber-300";
+
+      case "awaiting_reverification":
+        return "bg-orange-500/15 text-orange-300";
+
+      case "resolved":
+        return "bg-emerald-500/15 text-emerald-300";
+
+      case "cancelled":
+        return "bg-slate-800 text-slate-400";
+
+      default:
+        return "bg-slate-800 text-slate-300";
+    }
+  }
+
+
+  function planProgressDetail(
+    plan: DevelopmentPlanSummary
+  ) {
+    switch (plan.resolution_status) {
+      case "awaiting_reassessment":
+        return "Development complete · reassessment required";
+
+      case "awaiting_verification":
+        return "Development complete · practical verification required";
+
+      case "awaiting_reverification":
+        return "Development complete · practical reverification required";
+
+      case "resolved":
+        return "Development and required evidence complete";
+
+      case "cancelled":
+        return "Plan cancelled";
+
+      default:
+        return `${plan.activities_completed}/${plan.activities_total} activities complete`;
+    }
+  }
+
+
   function resolutionActionLabel(
     status: string | null
   ) {
@@ -749,39 +802,27 @@ const uniqueVerifiedCompetencies =
           </div>
 
           {!summary ? (
-            <div className="flex gap-3">
-  <div className="flex gap-3">
-  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-    <p className="text-xs text-slate-500">
-      Open Plans
-    </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+                <p className="text-xs text-slate-500">
+                  Open Plans
+                </p>
 
-    <p className="mt-1 text-xl font-semibold">
-      {openDevelopmentPlans.length}
-    </p>
-  </div>
+                <p className="mt-1 text-xl font-semibold">
+                  {openDevelopmentPlans.length}
+                </p>
+              </div>
 
-  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-    <p className="text-xs text-slate-500">
-      Resolved
-    </p>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+                <p className="text-xs text-slate-500">
+                  Resolved
+                </p>
 
-    <p className="mt-1 text-xl font-semibold">
-      {resolvedDevelopmentPlans.length}
-    </p>
-  </div>
-</div>
-
-  <div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
-    <p className="text-xs text-slate-500">
-      Resolved
-    </p>
-
-    <p className="mt-1 text-xl font-semibold">
-      {resolvedDevelopmentPlans.length}
-    </p>
-  </div>
-</div>
+                <p className="mt-1 text-xl font-semibold">
+                  {resolvedDevelopmentPlans.length}
+                </p>
+              </div>
+            </div>
           ) : (
             <>
               <div className="mt-8">
@@ -1219,7 +1260,11 @@ const uniqueVerifiedCompetencies =
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${resolutionStatusClasses(
+                        plan.resolution_status
+                      )}`}
+                    >
                       {resolutionStatusLabel(
                         plan.resolution_status
                       )}
@@ -1253,13 +1298,25 @@ const uniqueVerifiedCompetencies =
                       Created from: {plan.action_label}
                     </p>
                   )}
+
+                  <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/40 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Next Action
+                    </p>
+
+                    <p className="mt-1 text-sm font-medium text-slate-200">
+                      {resolutionActionLabel(
+                        plan.resolution_status
+                      )}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="w-full sm:max-w-xs">
                   <div className="rounded-xl bg-slate-950/50 p-4">
                     <div className="flex justify-between">
                       <span className="text-sm text-slate-400">
-                        Progress
+                        Development Progress
                       </span>
 
                       <span className="font-semibold">
@@ -1283,10 +1340,7 @@ const uniqueVerifiedCompetencies =
                     </div>
 
                     <p className="mt-2 text-xs text-slate-500">
-                      {plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
-                      plan.activities_total === 0
-                        ? "Awaiting verification"
-                        : `${plan.activities_completed}/${plan.activities_total} activities complete`}
+                      {planProgressDetail(plan)}
                     </p>
                   </div>
                 </div>
@@ -1302,18 +1356,10 @@ const uniqueVerifiedCompetencies =
                 </p>
 
                 <Link
-                  href={
-                    plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
-                    plan.activities_total === 0
-                      ? `/employees/${employeeId}/practical-verification`
-                      : `/development-plans/${plan.development_plan_id}`
-                  }
+                  href={`/development-plans/${plan.development_plan_id}`}
                   className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-500/20"
                 >
-                  {plan.action_type === "PRACTICAL_VERIFICATION_NEEDED" &&
-                  plan.activities_total === 0
-                    ? "Open Practical Verification"
-                    : "Open Plan"}
+                  Open Plan
                 </Link>
               </div>
             </article>
