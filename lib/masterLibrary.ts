@@ -357,17 +357,54 @@ export async function listQuestions(assessmentId: string): Promise<AssessmentQue
 export async function createQuestion(input: {
   assessment_id: string;
   master_competency_template_id: string;
+  domain: string;
+  difficulty: "foundational" | "application" | "scenario";
   type: AssessmentQuestionType;
   prompt: string;
   scenario?: string;
   image_url?: string;
   options?: { id: string; label: string }[];
+  correct_answer: string | string[];
   points?: number;
   sort_order?: number;
+  critical_safety?: boolean;
+  practical_verification_required?: boolean;
 }): Promise<AssessmentQuestion> {
-  const { data, error } = await supabase.from("assessment_questions").insert(input).select().single();
+  const { data, error } = await supabase.rpc(
+    "wri_create_master_backed_assessment_question",
+    {
+      p_assessment_id: input.assessment_id,
+      p_master_competency_template_id:
+        input.master_competency_template_id,
+      p_domain: input.domain,
+      p_type: input.type,
+      p_difficulty: input.difficulty,
+      p_prompt: input.prompt,
+      p_options: input.options ?? [],
+      p_correct_answer: input.correct_answer,
+      p_scenario: input.scenario ?? null,
+      p_image_url: input.image_url ?? null,
+      p_points: input.points ?? 1,
+      p_sort_order: input.sort_order ?? 0,
+      p_critical_safety:
+        input.critical_safety ?? false,
+      p_practical_verification_required:
+        input.practical_verification_required ?? false,
+    }
+  );
+
   if (error) throw error;
-  return data as AssessmentQuestion;
+
+  const { data: question, error: questionError } =
+    await supabase
+      .from("assessment_questions")
+      .select("*")
+      .eq("id", data)
+      .single();
+
+  if (questionError) throw questionError;
+
+  return question as AssessmentQuestion;
 }
 
 export async function updateQuestion(id: string, patch: Partial<AssessmentQuestion>): Promise<void> {

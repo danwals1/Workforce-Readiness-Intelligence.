@@ -166,6 +166,9 @@ export default function AssessmentDetailPage() {
         {showNewQuestion && (
           <NewQuestionForm
             assessmentId={current.id}
+            assessmentCompetencyId={
+              current.master_competency_template_id
+            }
             competencies={competencies}
             nextSortOrder={questions.length}
             onCreated={() => {
@@ -231,17 +234,25 @@ export default function AssessmentDetailPage() {
 
 function NewQuestionForm({
   assessmentId,
+  assessmentCompetencyId,
   competencies,
   nextSortOrder,
   onCreated,
 }: {
   assessmentId: string;
+  assessmentCompetencyId: string | null;
   competencies: MasterCompetencyTemplate[];
   nextSortOrder: number;
   onCreated: () => void;
 }) {
-  const [competencyId, setCompetencyId] = useState(competencies[0]?.id ?? "");
+  const [competencyId, setCompetencyId] = useState(
+    assessmentCompetencyId ?? competencies[0]?.id ?? ""
+  );
   const [type, setType] = useState<AssessmentQuestionType>("multiple_choice");
+  const [domain, setDomain] = useState("");
+  const [difficulty, setDifficulty] = useState<
+    "foundational" | "application" | "scenario"
+  >("foundational");
   const [prompt, setPrompt] = useState("");
   const [scenario, setScenario] = useState("");
   const [optionsText, setOptionsText] = useState("");
@@ -260,26 +271,28 @@ function NewQuestionForm({
         .filter(Boolean)
         .map((label, idx) => ({ id: String.fromCharCode(97 + idx), label }));
 
-      const q = await createQuestion({
+      const isMulti = type === "multiple_select";
+
+      await createQuestion({
         assessment_id: assessmentId,
         master_competency_template_id: competencyId,
+        domain,
+        difficulty,
         type,
         prompt,
         scenario: scenario || undefined,
         options,
+        correct_answer: isMulti
+          ? correctAnswer
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : correctAnswer.trim(),
         sort_order: nextSortOrder,
       });
 
-      if (correctAnswer.trim()) {
-        const isMulti = type === "multiple_select";
-        await upsertAnswerKey({
-          question_id: q.id,
-          correct_answer: isMulti
-            ? correctAnswer.split(",").map((s) => s.trim())
-            : correctAnswer.trim(),
-        });
-      }
-
+      setDomain("");
+      setDifficulty("foundational");
       setPrompt("");
       setScenario("");
       setOptionsText("");
@@ -298,17 +311,27 @@ function NewQuestionForm({
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm text-slate-300">Competency</label>
-          <select
-            value={competencyId}
-            onChange={(e) => setCompetencyId(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 outline-none focus:border-cyan-500"
-          >
-            {competencies.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          {assessmentCompetencyId ? (
+            <div className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200">
+              {
+                competencies.find(
+                  (c) => c.id === assessmentCompetencyId
+                )?.name ?? "Assigned Competency"
+              }
+            </div>
+          ) : (
+            <select
+              value={competencyId}
+              onChange={(e) => setCompetencyId(e.target.value)}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 outline-none focus:border-cyan-500"
+            >
+              {competencies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div>
           <label className="mb-2 block text-sm text-slate-300">Type</label>
@@ -325,6 +348,43 @@ function NewQuestionForm({
           </select>
         </div>
       </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="mb-2 block text-sm text-slate-300">
+            Domain
+          </label>
+          <input
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            required
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 outline-none focus:border-cyan-500"
+            placeholder="Client Communication"
+          />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm text-slate-300">
+            Difficulty
+          </label>
+          <select
+            value={difficulty}
+            onChange={(e) =>
+              setDifficulty(
+                e.target.value as
+                  | "foundational"
+                  | "application"
+                  | "scenario"
+              )
+            }
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 outline-none focus:border-cyan-500"
+          >
+            <option value="foundational">Foundational</option>
+            <option value="application">Application</option>
+            <option value="scenario">Scenario</option>
+          </select>
+        </div>
+      </div>
+
       <div>
         <label className="mb-2 block text-sm text-slate-300">Prompt</label>
         <textarea
@@ -368,7 +428,12 @@ function NewQuestionForm({
       </div>
       <button
         type="submit"
-        disabled={saving || !competencyId}
+        disabled={
+          saving ||
+          !competencyId ||
+          !domain.trim() ||
+          !correctAnswer.trim()
+        }
         className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
       >
         {saving ? "Saving…" : "Create Question"}

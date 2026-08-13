@@ -146,13 +146,58 @@ export default function AssessmentAttemptPage() {
               ? rawQuestion.options
               : [];
 
+            const normalizedOptions: Option[] =
+              rawOptions
+                .map((option) => {
+                  if (
+                    typeof option === "object" &&
+                    option !== null
+                  ) {
+                    const raw =
+                      option as Record<string, unknown>;
+
+                    const key =
+                      raw.id ??
+                      raw.key ??
+                      raw.value;
+
+                    const text =
+                      raw.label ??
+                      raw.text ??
+                      raw.name;
+
+                    if (
+                      key !== undefined &&
+                      text !== undefined
+                    ) {
+                      return {
+                        key: String(key),
+                        text: String(text),
+                      };
+                    }
+                  }
+
+                  if (typeof option === "string") {
+                    return {
+                      key: option,
+                      text: option,
+                    };
+                  }
+
+                  return null;
+                })
+                .filter(
+                  (option): option is Option =>
+                    option !== null
+                );
+
             return {
               id: rawQuestion.id,
               question_order: row.question_order,
               type: rawQuestion.type,
               prompt: rawQuestion.prompt,
               scenario: rawQuestion.scenario,
-              options: rawOptions as Option[],
+              options: normalizedOptions,
               domain: rawQuestion.domain,
               difficulty: rawQuestion.difficulty,
             };

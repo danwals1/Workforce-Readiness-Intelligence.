@@ -97,6 +97,18 @@ type DevelopmentActivity = {
   updated_at: string;
 };
 
+type RoleDevelopmentAssessmentAvailability = {
+  activity_id: string;
+  master_competency_template_id: string;
+  competency_name: string;
+  target_required_level: number | null;
+  assessment_id: string | null;
+  assessment_name: string | null;
+  question_count: number;
+  answer_key_count: number;
+  assessment_available: boolean;
+};
+
 type PlanOwner = {
   user_id: string;
   employee_id: string | null;
@@ -205,6 +217,18 @@ export default function DevelopmentPlanPage() {
   const [planOwner, setPlanOwner] =
     useState<PlanOwner | null>(null);
   const [activities, setActivities] = useState<DevelopmentActivity[]>([]);
+
+  const [
+    roleAssessmentAvailability,
+    setRoleAssessmentAvailability,
+  ] = useState<Map<string, RoleDevelopmentAssessmentAvailability>>(
+    new Map()
+  );
+
+  const [
+    startingRoleAssessmentActivityId,
+    setStartingRoleAssessmentActivityId,
+  ] = useState<string | null>(null);
 
   const [
     targetRoleProgress,
@@ -664,6 +688,49 @@ async function loadPracticalEvidence() {
   );
 }
 
+async function loadRoleAssessmentAvailability() {
+  const {
+    data: planData,
+    error: planError,
+  } = await supabase
+    .from("development_plans")
+    .select("origin")
+    .eq("id", planId)
+    .maybeSingle();
+
+  if (planError) {
+    throw planError;
+  }
+
+  if (planData?.origin !== "role_comparison") {
+    setRoleAssessmentAvailability(new Map());
+    return;
+  }
+
+  const { data, error } = await supabase.rpc(
+    "wri_role_development_assessment_availability",
+    {
+      p_development_plan_id: planId,
+    }
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  const rows =
+    (data ?? []) as RoleDevelopmentAssessmentAvailability[];
+
+  setRoleAssessmentAvailability(
+    new Map(
+      rows.map((row) => [
+        row.activity_id,
+        row,
+      ])
+    )
+  );
+}
+
 async function loadResolutionEvidence() {
   const { data, error } = await supabase
     .from("v_development_plan_resolution_evidence")
@@ -711,7 +778,69 @@ async function loadResolutionEvidence() {
     loadActivities(),
     loadResolutionEvidence(),
     loadPracticalEvidence(),
+    loadRoleAssessmentAvailability(),
   ]);
+}
+
+async function startRoleDevelopmentCompetencyAssessment(
+  activity: DevelopmentActivity
+) {
+  if (!plan) {
+    return;
+  }
+
+  const availability =
+    roleAssessmentAvailability.get(activity.id);
+
+  if (!availability?.assessment_available) {
+    setMessage(
+      "Assessment content is not currently available for this competency."
+    );
+    return;
+  }
+
+  setStartingRoleAssessmentActivityId(
+    activity.id
+  );
+
+  setMessage("");
+  setSuccessMessage("");
+
+  try {
+    const { data, error } = await supabase.rpc(
+      "wri_start_role_development_competency_assessment",
+      {
+        p_development_plan_activity_id:
+          activity.id,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data) {
+      throw new Error(
+        "The competency assessment could not be started."
+      );
+    }
+
+    router.push(
+      `/assessments/attempts/${data}?plan=${encodeURIComponent(
+        plan.development_plan_id
+      )}`
+    );
+  } catch (error) {
+    setMessage(
+      error instanceof Error
+        ? error.message
+        : "Unable to start competency assessment."
+    );
+  } finally {
+    setStartingRoleAssessmentActivityId(
+      null
+    );
+  }
 }
 
 async function startTargetedReassessment() {
@@ -2383,31 +2512,98 @@ Next Required Action
 
                         {plan.origin === "role_comparison" &&
                           activity.master_competency_template_id &&
-                          activity.target_status_snapshot === "not_assessed" && (
-                            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-amber-200">
-                                    Assessment Content Needed
-                                  </p>
+                          activity.target_status_snapshot === "not_assessed" &&
+                          (() => {
+                            const availability =
+                              roleAssessmentAvailability.get(
+                                activity.id
+                              );
 
-                                  <p className="mt-1 text-sm leading-6 text-slate-400">
-                                    No published assessment content is currently available to establish knowledge evidence for this target-role competency.
+                            if (
+                              availability?.assessment_available
+                            ) {
+                              return (
+                                <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-cyan-200">
+                                        Assessment Ready
+                                      </p>
+
+                                      <p className="mt-1 text-sm leading-6 text-slate-400">
+                                        Valid assessment content is available for this target-role competency.
+                                      </p>
+
+                                      {availability.assessment_name && (
+                                        <p className="mt-2 text-xs text-slate-500">
+                                          {availability.assessment_name}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div className="flex shrink-0 flex-wrap items-center gap-3">
+                                      {activity.target_required_level_snapshot && (
+                                        <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200">
+                                          Target Level{" "}
+                                          {activity.target_required_level_snapshot}
+                                        </span>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          startRoleDevelopmentCompetencyAssessment(
+                                            activity
+                                          )
+                                        }
+                                        disabled={
+                                          startingRoleAssessmentActivityId ===
+                                          activity.id
+                                        }
+                                        className="rounded-lg border border-cyan-600 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {startingRoleAssessmentActivityId ===
+                                        activity.id
+                                          ? "Starting..."
+                                          : "Start Competency Assessment"}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <p className="mt-3 text-xs text-slate-500">
+                                    Assessment results create knowledge evidence. The development activity remains separate and is not automatically completed.
                                   </p>
                                 </div>
+                              );
+                            }
 
-                                {activity.target_required_level_snapshot && (
-                                  <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200">
-                                    Target Level {activity.target_required_level_snapshot}
-                                  </span>
-                                )}
+                            return (
+                              <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-amber-200">
+                                      Assessment Content Needed
+                                    </p>
+
+                                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                                      No published assessment content is currently available to establish knowledge evidence for this target-role competency.
+                                    </p>
+                                  </div>
+
+                                  {activity.target_required_level_snapshot && (
+                                    <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200">
+                                      Target Level{" "}
+                                      {activity.target_required_level_snapshot}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="mt-3 text-xs text-slate-500">
+                                  This activity remains open until valid assessment evidence can be collected.
+                                </p>
                               </div>
-
-                              <p className="mt-3 text-xs text-slate-500">
-                                This activity remains open until valid assessment evidence can be collected.
-                              </p>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                         {activity.completion_notes && (
                           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
