@@ -60,6 +60,19 @@ type DevelopmentPlan = {
     | null;
 };
 
+type TargetRoleProgress = {
+  target_role_name: string;
+  target_competencies_ready: number;
+  target_competencies_total: number;
+  target_readiness_percent: number;
+
+  knowledge_gap_count: number;
+  practical_gap_count: number;
+  not_assessed_count: number;
+  reverification_due_count: number;
+  reverification_required_count: number;
+};
+
 type DevelopmentActivity = {
   id: string;
   development_plan_id: string;
@@ -187,6 +200,14 @@ export default function DevelopmentPlanPage() {
   const [planOwner, setPlanOwner] =
     useState<PlanOwner | null>(null);
   const [activities, setActivities] = useState<DevelopmentActivity[]>([]);
+
+  const [
+    targetRoleProgress,
+    setTargetRoleProgress,
+  ] = useState<TargetRoleProgress | null>(
+    null
+  );
+
 const [resolutionEvidence, setResolutionEvidence] =
   useState<ResolutionEvidence | null>(null);
 const [practicalEvidence, setPracticalEvidence] =
@@ -484,6 +505,37 @@ useState(false);
     }
   }
 
+  async function loadTargetRoleProgress(
+    employeeId: string,
+    targetRoleTemplateId: string
+  ) {
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_compare_employee_role_readiness",
+      {
+        p_employee_id: employeeId,
+        p_target_role_template_id:
+          targetRoleTemplateId,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    const rows =
+      (data ?? []) as TargetRoleProgress[];
+
+    if (rows.length === 0) {
+      setTargetRoleProgress(null);
+      return;
+    }
+
+    setTargetRoleProgress(rows[0]);
+  }
+
   async function loadPlan() {
     const { data, error } = await supabase
       .from("v_development_plan_resolution")
@@ -541,6 +593,21 @@ useState(false);
       loadedPlan.employee_id,
       loadedPlan.owner_user_id
     );
+
+    if (
+      loadedPlan.origin ===
+        "role_comparison" &&
+      loadedPlan
+        .target_master_role_template_id
+    ) {
+      await loadTargetRoleProgress(
+        loadedPlan.employee_id,
+        loadedPlan
+          .target_master_role_template_id
+      );
+    } else {
+      setTargetRoleProgress(null);
+    }
   }
 
   async function loadActivities() {
@@ -1476,7 +1543,19 @@ return (
 
               <div className="mt-6 flex flex-wrap gap-x-8 gap-y-3 text-sm">
                 <div><span className="text-slate-500">Role:</span> <span className="text-slate-300">{plan.role_name_snapshot || "—"}</span></div>
-                <div><span className="text-slate-500">Type:</span> <span className="text-slate-300">{typeLabel(plan.development_type)}</span></div>
+                <div>
+                  <span className="text-slate-500">
+                    Type:
+                  </span>{" "}
+                  <span className="text-slate-300">
+                    {plan.origin ===
+                    "role_comparison"
+                      ? "Role Development"
+                      : typeLabel(
+                          plan.development_type
+                        )}
+                  </span>
+                </div>
                 <div><span className="text-slate-500">Start:</span> <span className="text-slate-300">{formatDate(plan.start_date)}</span></div>
                 <div><span className="text-slate-500">Due:</span> <span className={plan.overdue ? "font-medium text-rose-300" : "text-slate-300"}>{formatDate(plan.due_date)}</span></div>
               </div>
@@ -1907,6 +1986,156 @@ return (
     )}
   </section>
 )}
+
+{plan.origin ===
+  "role_comparison" &&
+  targetRoleProgress && (
+    <section className="mt-6 rounded-2xl border border-cyan-500/20 bg-slate-900 p-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-cyan-300">
+            Target Role Readiness
+          </p>
+
+          <h2 className="mt-2 text-2xl font-semibold">
+            {plan.target_role_name_snapshot ||
+              targetRoleProgress.target_role_name}
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            This readiness score is based on
+            demonstrated competency evidence for
+            the target role. Completing Development
+            Plan activities does not automatically
+            establish readiness.
+          </p>
+        </div>
+
+        <div className="min-w-[150px] rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4 lg:text-right">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Target Readiness
+          </p>
+
+          <p className="mt-1 text-3xl font-bold text-white">
+            {Number(
+              targetRoleProgress
+                .target_readiness_percent
+            )}
+            %
+          </p>
+
+          <p className="mt-1 text-sm text-slate-400">
+            {
+              targetRoleProgress
+                .target_competencies_ready
+            }
+            /
+            {
+              targetRoleProgress
+                .target_competencies_total
+            }{" "}
+            competencies ready
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-800">
+        <div
+          className="h-full rounded-full bg-cyan-400 transition-all"
+          style={{
+            width: `${Math.min(
+              100,
+              Math.max(
+                0,
+                Number(
+                  targetRoleProgress
+                    .target_readiness_percent
+                )
+              )
+            )}%`,
+          }}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Fully Ready
+          </p>
+          <p className="mt-2 text-xl font-semibold">
+            {
+              targetRoleProgress
+                .target_competencies_ready
+            }
+            /
+            {
+              targetRoleProgress
+                .target_competencies_total
+            }
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Knowledge Gaps
+          </p>
+          <p className="mt-2 text-xl font-semibold">
+            {
+              targetRoleProgress
+                .knowledge_gap_count
+            }
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Practical Development
+          </p>
+          <p className="mt-2 text-xl font-semibold">
+            {
+              targetRoleProgress
+                .practical_gap_count
+            }
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Not Assessed
+          </p>
+          <p className="mt-2 text-xl font-semibold">
+            {
+              targetRoleProgress
+                .not_assessed_count
+            }
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">
+            Reverification
+          </p>
+          <p className="mt-2 text-xl font-semibold">
+            {Number(
+              targetRoleProgress
+                .reverification_due_count
+            ) +
+              Number(
+                targetRoleProgress
+                  .reverification_required_count
+              )}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-3 text-sm text-slate-400">
+        Development work and target-role
+        readiness are tracked independently.
+        Evidence from assessments and practical
+        verification changes the readiness score.
+      </div>
+    </section>
+  )}
 
 <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
