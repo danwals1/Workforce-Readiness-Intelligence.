@@ -475,6 +475,34 @@ export default function EmployeePage() {
   }
 
 
+  function resolutionActionLabel(
+    status: string | null
+  ) {
+    switch (status) {
+      case "development_in_progress":
+        return "Complete Development Activities";
+
+      case "awaiting_reassessment":
+        return "Complete Reassessment";
+
+      case "awaiting_verification":
+        return "Complete Practical Verification";
+
+      case "awaiting_reverification":
+        return "Complete Practical Reverification";
+
+      case "resolved":
+        return "Resolved";
+
+      case "cancelled":
+        return "Cancelled";
+
+      default:
+        return "Review Development Plan";
+    }
+  }
+
+
   function verificationStatusClasses(
     status: string
   ) {
@@ -569,6 +597,61 @@ function displayedPlanProgress(
       ),
     [developmentPlans]
   );
+
+
+  const developmentPlansInProgress = useMemo(
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "development_in_progress"
+      ),
+    [developmentPlans]
+  );
+
+
+  const awaitingReassessmentPlans = useMemo(
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "awaiting_reassessment"
+      ),
+    [developmentPlans]
+  );
+
+
+  const awaitingVerificationPlans = useMemo(
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "awaiting_verification"
+      ),
+    [developmentPlans]
+  );
+
+
+  const awaitingReverificationPlans = useMemo(
+    () =>
+      developmentPlans.filter(
+        (plan) =>
+          plan.resolution_status ===
+          "awaiting_reverification"
+      ),
+    [developmentPlans]
+  );
+
+
+  const nextRequiredPlan =
+    openDevelopmentPlans[0] ?? null;
+
+
+  const knowledgeGapCount =
+    summary
+      ? Number(summary.developing_count) +
+        Number(summary.critical_gap_count)
+      : 0;
 
 const uniqueVerifiedCompetencies =
     useMemo(
@@ -847,6 +930,226 @@ const uniqueVerifiedCompetencies =
             </>
           )}
         </section>
+
+
+    {/* Readiness Overview */}
+
+<section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        Workforce Readiness
+      </p>
+
+      <h2 className="mt-2 text-2xl font-semibold">
+        Readiness Overview
+      </h2>
+
+      <p className="mt-1 max-w-3xl text-sm text-slate-400">
+        Current role readiness, active development work, and the next evidence or development action required.
+      </p>
+    </div>
+
+    {summary && (
+      <span
+        className={`w-fit rounded-full px-3 py-1 text-sm font-medium ${statusClasses(
+          summary.readiness_status
+        )}`}
+      >
+        {statusLabel(summary.readiness_status)}
+      </span>
+    )}
+  </div>
+
+
+  <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-5">
+      <p className="text-sm text-slate-500">
+        Overall Readiness
+      </p>
+
+      <p className="mt-2 text-3xl font-bold">
+        {summary
+          ? `${summary.readiness_percent}%`
+          : "—"}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {summary
+          ? `${summary.competencies_ready} of ${summary.competencies_total} competencies ready`
+          : "No completed assessment"}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-5">
+      <p className="text-sm text-slate-500">
+        Current Role
+      </p>
+
+      <p className="mt-2 text-xl font-semibold">
+        {summary?.role_name ?? "—"}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {summary?.assessment_name ??
+          "No role assessment available"}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-5">
+      <p className="text-sm text-slate-500">
+        Knowledge Gaps
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-bold ${
+          knowledgeGapCount > 0
+            ? "text-amber-300"
+            : "text-emerald-300"
+        }`}
+      >
+        {summary ? knowledgeGapCount : "—"}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {summary
+          ? `${summary.critical_gap_count} critical · ${summary.developing_count} developing`
+          : "No assessment data"}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-5">
+      <p className="text-sm text-slate-500">
+        Practical Gaps
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-bold ${
+          summary &&
+          Number(summary.practical_gap_count) > 0
+            ? "text-amber-300"
+            : "text-emerald-300"
+        }`}
+      >
+        {summary
+          ? summary.practical_gap_count
+          : "—"}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        Current competency practical requirements
+      </p>
+    </div>
+  </div>
+
+
+  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <p className="text-xs text-slate-500">
+        Development In Progress
+      </p>
+
+      <p className="mt-1 text-2xl font-semibold">
+        {developmentPlansInProgress.length}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <p className="text-xs text-slate-500">
+        Awaiting Reassessment
+      </p>
+
+      <p className="mt-1 text-2xl font-semibold">
+        {awaitingReassessmentPlans.length}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <p className="text-xs text-slate-500">
+        Awaiting Verification
+      </p>
+
+      <p className="mt-1 text-2xl font-semibold">
+        {awaitingVerificationPlans.length}
+      </p>
+    </div>
+
+
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <p className="text-xs text-slate-500">
+        Awaiting Reverification
+      </p>
+
+      <p className="mt-1 text-2xl font-semibold">
+        {awaitingReverificationPlans.length}
+      </p>
+    </div>
+  </div>
+
+
+  <div className="mt-6 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-5">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-cyan-300/70">
+          Next Required Action
+        </p>
+
+        {nextRequiredPlan ? (
+          <>
+            <p className="mt-2 text-lg font-semibold text-cyan-100">
+              {resolutionActionLabel(
+                nextRequiredPlan.resolution_status
+              )}
+            </p>
+
+            <p className="mt-1 text-sm text-slate-300">
+              {nextRequiredPlan.competency_name_snapshot ??
+                nextRequiredPlan.title}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {resolutionStatusLabel(
+                nextRequiredPlan.resolution_status
+              )}
+              {" · "}
+              {nextRequiredPlan.priority
+                .charAt(0)
+                .toUpperCase() +
+                nextRequiredPlan.priority.slice(1)}
+              {" priority"}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-lg font-semibold text-emerald-300">
+              No Open Development Actions
+            </p>
+
+            <p className="mt-1 text-sm text-slate-400">
+              There are no unresolved Development Plans for this employee.
+            </p>
+          </>
+        )}
+      </div>
+
+      {nextRequiredPlan && (
+        <Link
+          href={`/development-plans/${nextRequiredPlan.development_plan_id}`}
+          className="w-fit rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+        >
+          Open Development Plan
+        </Link>
+      )}
+    </div>
+  </div>
+</section>
 
 
     {/* Development Plans */}
