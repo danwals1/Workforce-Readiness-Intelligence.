@@ -23,10 +23,16 @@ type DevelopmentPlan = {
   action_type: string | null;
   action_key: string | null;
   master_competency_template_id: string | null;
+  origin: "current_readiness" | "manual" | "role_comparison";
+  target_master_role_template_id: string | null;
   development_completed_at: string | null;
   awaiting_evidence_since: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
+};
+
+type RoleDevelopmentReadiness = {
+  target_readiness_percent: number | null;
 };
 
 type DevelopmentActivity = {
@@ -125,6 +131,7 @@ const allowedResolutionStatuses = [
   "awaiting_reassessment",
   "awaiting_verification",
   "awaiting_reverification",
+  "awaiting_target_readiness",
   "resolved",
   "cancelled",
 ];
@@ -146,6 +153,11 @@ export default function SystemTestingPage() {
 
   const [practicalResolutionEvidence, setPracticalResolutionEvidence] =
     useState<PracticalResolutionEvidence[]>([]);
+
+  const [
+    roleDevelopmentReadiness,
+    setRoleDevelopmentReadiness,
+  ] = useState<Record<string, number | null>>({});
 
 
   const [history, setHistory] =
@@ -273,6 +285,8 @@ export default function SystemTestingPage() {
           action_type,
           action_key,
           master_competency_template_id,
+          origin,
+          target_master_role_template_id,
           development_completed_at,
           awaiting_evidence_since,
           resolved_at,
@@ -359,6 +373,69 @@ export default function SystemTestingPage() {
       setLoading(false);
       return;
     }
+
+    const roleComparisonSourcePlans =
+      (plansResult.data ?? []) as DevelopmentPlan[];
+
+    const roleComparisonPlans =
+      roleComparisonSourcePlans.filter(
+        (plan) =>
+          plan.origin === "role_comparison" &&
+          plan.target_master_role_template_id !== null
+      );
+
+    const roleReadinessEntries =
+      await Promise.all(
+        roleComparisonPlans.map(
+          async (plan) => {
+            const { data, error } =
+              await supabase.rpc(
+                "wri_compare_employee_role_readiness",
+                {
+                  p_employee_id:
+                    plan.employee_id,
+                  p_target_role_template_id:
+                    plan.target_master_role_template_id!,
+                }
+              );
+
+            if (error) {
+              console.error(
+                "Unable to load role-development readiness",
+                plan.id,
+                error
+              );
+
+              return [
+                plan.id,
+                null,
+              ] as const;
+            }
+
+            const rows =
+              (data ?? []) as RoleDevelopmentReadiness[];
+
+            const readiness =
+              rows.length > 0 &&
+              rows[0].target_readiness_percent !== null
+                ? Number(
+                    rows[0].target_readiness_percent
+                  )
+                : null;
+
+            return [
+              plan.id,
+              readiness,
+            ] as const;
+          }
+        )
+      );
+
+    setRoleDevelopmentReadiness(
+      Object.fromEntries(
+        roleReadinessEntries
+      )
+    );
 
     setPracticalResolutionEvidence(
       (practicalEvidenceResult.data ?? []) as PracticalResolutionEvidence[]
@@ -644,6 +721,123 @@ export default function SystemTestingPage() {
           : `${brokenWaitingPlans.length} waiting plan(s) have inconsistent lifecycle state.`,
     });
 
+    const roleDevelopmentViolations =
+      plans.filter((plan) => {
+        if (
+          plan.origin !== "role_comparison"
+        ) {
+          return false;
+        }
+
+        if (
+          !plan.target_master_role_template_id
+        ) {
+          return true;
+        }
+
+        const planActivities =
+          activities.filter(
+            (activity) =>
+              activity.development_plan_id ===
+              plan.id &&
+              activity.status !== "cancelled"
+          );
+
+        const incompleteActivities =
+          planActivities.filter(
+            (activity) =>
+              activity.status !== "completed"
+          );
+
+        const readiness =
+          roleDevelopmentReadiness[
+            plan.id
+          ];
+
+        /*
+         * Development execution is still underway.
+         */
+        if (
+          incompleteActivities.length > 0
+        ) {
+          return (
+            plan.status !== "in_progress" ||
+            plan.resolution_status !==
+              "development_in_progress" ||
+            plan.development_completed_at !==
+              null ||
+            plan.awaiting_evidence_since !==
+              null ||
+            plan.resolved_at !== null
+          );
+        }
+
+        /*
+         * A role-comparison plan should never have
+         * zero active activities.
+         */
+        if (planActivities.length === 0) {
+          return true;
+        }
+
+        /*
+         * Readiness lookup must be available for a
+         * completed role-development plan.
+         */
+        if (readiness === undefined ||
+            readiness === null) {
+          return true;
+        }
+
+        /*
+         * Development complete but target role is
+         * not yet fully demonstrated.
+         */
+        if (readiness < 100) {
+          return (
+            plan.status !== "completed" ||
+            plan.resolution_status !==
+              "awaiting_target_readiness" ||
+            plan.development_completed_at ===
+              null ||
+            plan.awaiting_evidence_since ===
+              null ||
+            plan.resolved_at !== null
+          );
+        }
+
+        /*
+         * Target role has reached full canonical
+         * readiness.
+         */
+        return (
+          plan.status !== "completed" ||
+          plan.resolution_status !==
+            "resolved" ||
+          plan.development_completed_at ===
+            null ||
+          plan.awaiting_evidence_since !==
+            null ||
+          plan.resolved_at === null
+        );
+      });
+
+    nextChecks.push({
+      id: "role-development-lifecycle",
+      name: "Role Development Lifecycle Integrity",
+      description:
+        "Role-development plans must keep development execution separate from target-role readiness and resolve only when canonical target-role readiness reaches 100%.",
+      status:
+        roleDevelopmentViolations.length === 0
+          ? "pass"
+          : "fail",
+      detail:
+        roleDevelopmentViolations.length === 0
+          ? "Role-development execution and target-role readiness are lifecycle-consistent."
+          : `${roleDevelopmentViolations.length} role-development plan(s) have inconsistent execution, readiness, or resolution state.`,
+    });
+
+
     const completedActivitiesWithoutTimestamp =
       activities.filter(
         (activity) =>
@@ -837,6 +1031,7 @@ export default function SystemTestingPage() {
     activities,
     readinessActions,
     practicalResolutionEvidence,
+    roleDevelopmentReadiness,
   ]);
 
   const scenarioCoverage =
