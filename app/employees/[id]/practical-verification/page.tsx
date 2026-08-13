@@ -85,6 +85,29 @@ type VerificationHistory = {
   notes: string | null;
 };
 
+type DevelopmentPlanVerificationNeed = {
+  development_plan_id: string;
+  employee_id: string;
+  action_type: string | null;
+  action_label: string | null;
+  master_competency_template_id: string | null;
+  competency_name_snapshot: string | null;
+  title: string;
+  priority: string;
+  resolution_status:
+    | "development_in_progress"
+    | "awaiting_reassessment"
+    | "awaiting_verification"
+    | "awaiting_reverification"
+    | "resolved"
+    | "cancelled";
+  development_completed_at: string | null;
+  awaiting_evidence_since: string | null;
+  due_date: string | null;
+  resolution_label: string;
+};
+
+
 type DraftVerification = {
   ratingLevel: number;
   notes: string;
@@ -111,6 +134,11 @@ export default function PracticalVerificationPage() {
 
   const [history, setHistory] =
     useState<VerificationHistory[]>([]);
+
+  const [
+    verificationDevelopmentPlans,
+    setVerificationDevelopmentPlans,
+  ] = useState<DevelopmentPlanVerificationNeed[]>([]);
 
   const [drafts, setDrafts] =
     useState<
@@ -162,6 +190,41 @@ export default function PracticalVerificationPage() {
         []) as VerificationHistory[]
     );
   }
+
+  async function loadVerificationDevelopmentPlans() {
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_list_development_plan_resolutions",
+      {
+        p_employee_id: employeeId,
+        p_resolution_status: null,
+      }
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    const rows =
+      (data ??
+        []) as DevelopmentPlanVerificationNeed[];
+
+    setVerificationDevelopmentPlans(
+      rows.filter(
+        (plan) =>
+          plan.master_competency_template_id &&
+          (
+            plan.resolution_status ===
+              "awaiting_verification" ||
+            plan.resolution_status ===
+              "awaiting_reverification"
+          )
+      )
+    );
+  }
+
 
   async function loadCompetencies() {
     const {
@@ -394,6 +457,7 @@ export default function PracticalVerificationPage() {
         await Promise.all([
           loadCompetencies(),
           loadHistory(),
+          loadVerificationDevelopmentPlans(),
         ]);
 
         setMessage("");
@@ -463,6 +527,41 @@ export default function PracticalVerificationPage() {
       [practicalCompetencies]
     );
 
+  const developmentPlansByCompetency =
+    useMemo(() => {
+      const map =
+        new Map<
+          string,
+          DevelopmentPlanVerificationNeed[]
+        >();
+
+      verificationDevelopmentPlans.forEach(
+        (plan) => {
+          const competencyId =
+            plan.master_competency_template_id;
+
+          if (!competencyId) {
+            return;
+          }
+
+          const existing =
+            map.get(competencyId) ?? [];
+
+          map.set(
+            competencyId,
+            [...existing, plan]
+          );
+        }
+      );
+
+      return map;
+    }, [verificationDevelopmentPlans]);
+
+
+  const developmentPlanEvidenceCount =
+    verificationDevelopmentPlans.length;
+
+
   const latestHistoryByCompetency =
     useMemo(() => {
       const map =
@@ -515,7 +614,10 @@ export default function PracticalVerificationPage() {
         case "needs_verification":
           return practicalCompetencies.filter(
             (competency) =>
-              !competency.practical_ready
+              !competency.practical_ready ||
+              developmentPlansByCompetency.has(
+                competency.master_competency_template_id
+              )
           );
 
         default:
@@ -524,6 +626,7 @@ export default function PracticalVerificationPage() {
     }, [
       filterMode,
       practicalCompetencies,
+      developmentPlansByCompetency,
     ]);
 
   function updateRating(
@@ -620,6 +723,7 @@ export default function PracticalVerificationPage() {
       await Promise.all([
         loadCompetencies(),
         loadHistory(),
+        loadVerificationDevelopmentPlans(),
       ]);
 
       setSuccessMessage(
@@ -879,7 +983,7 @@ export default function PracticalVerificationPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <StatCard
                 label="Ready"
                 value={verifiedCount}
@@ -908,6 +1012,12 @@ export default function PracticalVerificationPage() {
                 label="Expired"
                 value={expiredCount}
                 textClass="text-rose-300"
+              />
+
+              <StatCard
+                label="Plan Evidence"
+                value={developmentPlanEvidenceCount}
+                textClass="text-amber-300"
               />
             </div>
           </div>
@@ -1048,6 +1158,14 @@ export default function PracticalVerificationPage() {
                   competencyId
                 );
 
+              const relatedDevelopmentPlans =
+                developmentPlansByCompetency.get(
+                  competencyId
+                ) ?? [];
+
+              const hasPlanVerificationNeed =
+                relatedDevelopmentPlans.length > 0;
+
               return (
                 <section
                   key={competencyId}
@@ -1129,6 +1247,100 @@ export default function PracticalVerificationPage() {
                       </div>
                     </div>
                   </div>
+
+                  {hasPlanVerificationNeed && (
+                    <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">
+                            Development Plan Evidence Required
+                          </p>
+
+                          <p className="mt-2 text-sm leading-6 text-slate-200">
+                            Development is complete, but this competency has an open Development Plan waiting for qualifying practical verification evidence.
+                          </p>
+                        </div>
+
+                        <span className="w-fit rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-200">
+                          {relatedDevelopmentPlans.length}{" "}
+                          {relatedDevelopmentPlans.length === 1
+                            ? "Open Plan"
+                            : "Open Plans"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3">
+                        {relatedDevelopmentPlans.map(
+                          (plan) => (
+                            <div
+                              key={
+                                plan.development_plan_id
+                              }
+                              className="rounded-lg border border-amber-500/20 bg-slate-950/30 p-4"
+                            >
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <p className="font-medium text-white">
+                                    {plan.title}
+                                  </p>
+
+                                  <p className="mt-1 text-xs text-slate-400">
+                                    {
+                                      plan.resolution_label
+                                    }
+                                  </p>
+                                </div>
+
+                                <span className="w-fit rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-200">
+                                  {plan.resolution_status ===
+                                  "awaiting_reverification"
+                                    ? "Reverification"
+                                    : "Verification"}
+                                </span>
+                              </div>
+
+                              <div className="mt-3 grid gap-3 text-xs text-slate-400 sm:grid-cols-2">
+                                <div>
+                                  <span className="block font-medium text-amber-200">
+                                    Development Completed
+                                  </span>
+
+                                  <span className="mt-1 block">
+                                    {formatDate(
+                                      plan.development_completed_at
+                                    )}
+                                  </span>
+                                </div>
+
+                                <div>
+                                  <span className="block font-medium text-amber-200">
+                                    Evidence Required Since
+                                  </span>
+
+                                  <span className="mt-1 block">
+                                    {formatDate(
+                                      plan.awaiting_evidence_since
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <Link
+                                href={`/development-plans/${plan.development_plan_id}`}
+                                className="mt-4 inline-block text-xs font-medium text-amber-200 hover:text-white"
+                              >
+                                Open Development Plan →
+                              </Link>
+                            </div>
+                          )
+                        )}
+                      </div>
+
+                      <p className="mt-4 text-xs leading-5 text-slate-400">
+                        A qualifying verification at or above the required level will be recorded as immutable evidence. The Development Plan resolution lifecycle will update automatically.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Requirements */}
 
@@ -1412,6 +1624,15 @@ export default function PracticalVerificationPage() {
                         {savingId ===
                         competencyId
                           ? "Saving..."
+                          : hasPlanVerificationNeed &&
+                            relatedDevelopmentPlans.some(
+                              (plan) =>
+                                plan.resolution_status ===
+                                "awaiting_reverification"
+                            )
+                          ? "Complete Plan Reverification"
+                          : hasPlanVerificationNeed
+                          ? "Complete Plan Verification"
                           : competency.verification_expired
                           ? "Complete Reverification"
                           : latestVerification
