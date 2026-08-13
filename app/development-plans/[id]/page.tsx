@@ -87,6 +87,11 @@ type DevelopmentActivity = {
   completed_at: string | null;
   completion_notes: string | null;
   evidence_url: string | null;
+
+  master_competency_template_id: string | null;
+  target_required_level_snapshot: number | null;
+  target_status_snapshot: string | null;
+
   created_by_user_id: string;
   created_at: string;
   updated_at: string;
@@ -2343,6 +2348,39 @@ Next Required Action
                         <h3 className="mt-3 text-lg font-semibold">{activity.sequence_number}. {activity.title}</h3>
                         {activity.description && <p className="mt-2 text-sm leading-6 text-slate-400">{activity.description}</p>}
                         {activity.due_date && <p className="mt-3 text-xs text-slate-500">Due {formatDate(activity.due_date)}</p>}
+
+                        {plan.origin === "role_comparison" &&
+                          activity.master_competency_template_id &&
+                          (
+                            activity.target_status_snapshot === "practical_gap" ||
+                            activity.target_status_snapshot === "reverification_due" ||
+                            activity.target_status_snapshot === "reverification_required"
+                          ) && (
+                            <div className="mt-4 flex flex-wrap items-center gap-3">
+                              <Link
+                                href={`/employees/${plan.employee_id}/practical-verification?competency=${encodeURIComponent(
+                                  activity.master_competency_template_id
+                                )}&targetLevel=${activity.target_required_level_snapshot ?? ""}&plan=${plan.development_plan_id}`}
+                                className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20"
+                              >
+                                {activity.target_status_snapshot ===
+                                "reverification_required"
+                                  ? "Record Reverification"
+                                  : activity.target_status_snapshot ===
+                                    "reverification_due"
+                                    ? "Refresh Practical Verification"
+                                    : "Record Practical Verification"}
+                              </Link>
+
+                              {activity.target_required_level_snapshot && (
+                                <span className="text-xs text-slate-400">
+                                  Target role requires Level{" "}
+                                  {activity.target_required_level_snapshot}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                         {activity.completion_notes && (
                           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                             <p className="text-xs font-medium uppercase tracking-wide text-emerald-300">

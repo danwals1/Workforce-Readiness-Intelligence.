@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useParams,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import Link from "next/link";
 import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
@@ -123,8 +127,24 @@ type FilterMode =
 export default function PracticalVerificationPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const employeeId = params.id as string;
+
+  const focusedCompetencyId =
+    searchParams.get("competency");
+
+  const targetLevelParam =
+    searchParams.get("targetLevel");
+
+  const sourceDevelopmentPlanId =
+    searchParams.get("plan");
+
+  const focusedTargetLevel =
+    targetLevelParam &&
+    Number.isFinite(Number(targetLevelParam))
+      ? Number(targetLevelParam)
+      : null;
 
   const [employee, setEmployee] =
     useState<Employee | null>(null);
@@ -590,6 +610,14 @@ export default function PracticalVerificationPage() {
 
   const filteredCompetencies =
     useMemo(() => {
+      if (focusedCompetencyId) {
+        return practicalCompetencies.filter(
+          (competency) =>
+            competency.master_competency_template_id ===
+            focusedCompetencyId
+        );
+      }
+
       switch (filterMode) {
         case "verified":
           return practicalCompetencies.filter(
@@ -627,6 +655,7 @@ export default function PracticalVerificationPage() {
       filterMode,
       practicalCompetencies,
       developmentPlansByCompetency,
+      focusedCompetencyId,
     ]);
 
   function updateRating(
@@ -1063,6 +1092,7 @@ export default function PracticalVerificationPage() {
 
         {/* Filters */}
 
+        {!focusedCompetencyId && (
         <div className="mb-6 flex flex-wrap gap-2">
           <FilterButton
             active={
@@ -1139,8 +1169,44 @@ export default function PracticalVerificationPage() {
             All
           </FilterButton>
         </div>
+        )}
 
         {/* Competencies */}
+
+        {focusedCompetencyId && (
+          <section className="mb-6 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
+                  Role Development Verification
+                </p>
+
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Record the employee&apos;s demonstrated practical
+                  proficiency for this competency.
+                  {focusedTargetLevel
+                    ? ` The target role requires Level ${focusedTargetLevel}.`
+                    : ""}
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  The target level is a readiness requirement, not an
+                  automatic verification rating. Record the level actually
+                  demonstrated by the employee.
+                </p>
+              </div>
+
+              {sourceDevelopmentPlanId && (
+                <Link
+                  href={`/development-plans/${sourceDevelopmentPlanId}`}
+                  className="w-fit rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
+                >
+                  Back to Development Plan
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
 
         <div className="space-y-6">
           {filteredCompetencies.map(
@@ -1193,9 +1259,14 @@ export default function PracticalVerificationPage() {
                             competency.readiness_status
                           )}`}
                         >
-                          {readinessLabel(
-                            competency.readiness_status
-                          )}
+                          {focusedCompetencyId ===
+                          competencyId
+                            ? `Current Role: ${readinessLabel(
+                                competency.readiness_status
+                              )}`
+                            : readinessLabel(
+                                competency.readiness_status
+                              )}
                         </span>
                       </div>
 
@@ -1204,6 +1275,14 @@ export default function PracticalVerificationPage() {
                           competency.competency_name
                         }
                       </h2>
+
+                      {focusedCompetencyId === competencyId &&
+                        focusedTargetLevel && (
+                          <div className="mt-3 inline-flex items-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200">
+                            Target Role Requirement: Level{" "}
+                            {focusedTargetLevel}
+                          </div>
+                        )}
 
                       {competency.description && (
                         <p className="mt-3 leading-7 text-slate-400">
@@ -1214,7 +1293,15 @@ export default function PracticalVerificationPage() {
                       )}
                     </div>
 
-                    <div className="grid min-w-[260px] grid-cols-2 gap-3">
+                    <div
+                      className={`grid min-w-[260px] gap-3 ${
+                        focusedCompetencyId ===
+                          competencyId &&
+                        focusedTargetLevel
+                          ? "grid-cols-3"
+                          : "grid-cols-2"
+                      }`}
+                    >
                       <div className="rounded-xl bg-slate-950/60 p-4">
                         <p className="text-xs text-slate-500">
                           Knowledge
@@ -1237,7 +1324,10 @@ export default function PracticalVerificationPage() {
 
                       <div className="rounded-xl bg-slate-950/60 p-4">
                         <p className="text-xs text-slate-500">
-                          Required
+                          {focusedCompetencyId ===
+                          competencyId
+                            ? "Current Role Required"
+                            : "Required"}
                         </p>
 
                         <p className="mt-1 text-xl font-semibold">
@@ -1245,6 +1335,20 @@ export default function PracticalVerificationPage() {
                             "—"}
                         </p>
                       </div>
+
+                      {focusedCompetencyId ===
+                        competencyId &&
+                        focusedTargetLevel && (
+                          <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+                            <p className="text-xs text-cyan-300">
+                              Target Role Required
+                            </p>
+
+                            <p className="mt-1 text-xl font-semibold text-cyan-100">
+                              {focusedTargetLevel}
+                            </p>
+                          </div>
+                        )}
                     </div>
                   </div>
 
