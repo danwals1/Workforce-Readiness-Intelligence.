@@ -51,6 +51,57 @@ type WorkforceRow = {
   awaiting_evidence_count: number;
 };
 
+type RoleOption = {
+  master_role_template_id: string;
+  role_name: string;
+  department: string | null;
+  competency_count: number;
+};
+
+type RoleComparisonRow = {
+  employee_id: string;
+  employee_first_name: string;
+  employee_last_name: string;
+
+  current_role_template_id: string | null;
+  current_role_name: string | null;
+  current_readiness_percent: number | null;
+
+  target_role_template_id: string;
+  target_role_name: string;
+  target_role_department: string | null;
+
+  master_competency_template_id: string;
+  competency_name: string;
+  competency_category: string | null;
+  competency_is_critical: boolean;
+
+  current_knowledge_level: number | null;
+  current_practical_level: number | null;
+  practical_verification_required: boolean;
+
+  target_required_level: number;
+
+  knowledge_target_ready: boolean;
+  practical_target_ready: boolean;
+  target_competency_ready: boolean;
+
+  reverification_due: boolean;
+  verification_expired: boolean;
+
+  target_status: string;
+
+  target_competencies_ready: number;
+  target_competencies_total: number;
+  target_readiness_percent: number;
+
+  knowledge_gap_count: number;
+  practical_gap_count: number;
+  not_assessed_count: number;
+  reverification_due_count: number;
+  reverification_required_count: number;
+};
+
 type StatusFilter =
   | "all"
   | "ready"
@@ -62,6 +113,12 @@ export default function WorkforceReadinessPage() {
 
   const [rows, setRows] =
     useState<WorkforceRow[]>([]);
+
+  const [roleOptions, setRoleOptions] =
+    useState<RoleOption[]>([]);
+
+  const [roleOptionsError, setRoleOptionsError] =
+    useState("");
 
   const [loading, setLoading] =
     useState(true);
@@ -76,6 +133,33 @@ export default function WorkforceReadinessPage() {
 
   const [statusFilter, setStatusFilter] =
     useState<StatusFilter>("all");
+
+  const [
+    comparisonEmployee,
+    setComparisonEmployee,
+  ] = useState<WorkforceRow | null>(
+    null
+  );
+
+  const [
+    selectedRoleId,
+    setSelectedRoleId,
+  ] = useState("");
+
+  const [
+    comparisonRows,
+    setComparisonRows,
+  ] = useState<RoleComparisonRow[]>([]);
+
+  const [
+    comparisonLoading,
+    setComparisonLoading,
+  ] = useState(false);
+
+  const [
+    comparisonMessage,
+    setComparisonMessage,
+  ] = useState("");
 
   const loadPage =
     useCallback(async () => {
@@ -103,22 +187,48 @@ export default function WorkforceReadinessPage() {
         return;
       }
 
-      const {
-        data,
-        error,
-      } = await supabase.rpc(
-        "wri_list_workforce_readiness"
-      );
+      const [
+        workforceResult,
+        roleOptionsResult,
+      ] = await Promise.all([
+        supabase.rpc(
+          "wri_list_workforce_readiness"
+        ),
+        supabase.rpc(
+          "wri_list_role_comparison_options"
+        ),
+      ]);
 
-      if (error) {
-        setMessage(error.message);
+      if (workforceResult.error) {
+        setMessage(
+          workforceResult.error.message
+        );
         setLoading(false);
         return;
       }
 
       setRows(
-        (data ?? []) as WorkforceRow[]
+        (workforceResult.data ??
+          []) as WorkforceRow[]
       );
+
+      if (roleOptionsResult.error) {
+        console.error(
+          "Role comparison options failed:",
+          roleOptionsResult.error
+        );
+
+        setRoleOptions([]);
+        setRoleOptionsError(
+          roleOptionsResult.error.message
+        );
+      } else {
+        setRoleOptions(
+          (roleOptionsResult.data ??
+            []) as RoleOption[]
+        );
+        setRoleOptionsError("");
+      }
 
       setMessage("");
       setLoading(false);
@@ -285,6 +395,116 @@ export default function WorkforceReadinessPage() {
         ),
       [rows]
     );
+
+  const availableRoleOptions =
+    useMemo(() => {
+      if (!comparisonEmployee) {
+        return roleOptions;
+      }
+
+      return roleOptions.filter(
+        (role) =>
+          role.master_role_template_id !==
+          comparisonEmployee.master_role_template_id
+      );
+    }, [
+      roleOptions,
+      comparisonEmployee,
+    ]);
+
+  const comparisonSummary =
+    comparisonRows.length > 0
+      ? comparisonRows[0]
+      : null;
+
+  const knowledgeDemonstratedCount =
+    useMemo(
+      () =>
+        comparisonRows.filter(
+          (row) =>
+            row.knowledge_target_ready
+        ).length,
+      [comparisonRows]
+    );
+
+  function openComparison(
+    row: WorkforceRow
+  ) {
+    setComparisonEmployee(row);
+    setSelectedRoleId("");
+    setComparisonRows([]);
+    setComparisonMessage("");
+
+    window.setTimeout(() => {
+      document
+        .getElementById(
+          "role-comparison"
+        )
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+    }, 0);
+  }
+
+  function closeComparison() {
+    setComparisonEmployee(null);
+    setSelectedRoleId("");
+    setComparisonRows([]);
+    setComparisonMessage("");
+  }
+
+  async function loadRoleComparison(
+    roleId: string
+  ) {
+    setSelectedRoleId(roleId);
+    setComparisonRows([]);
+    setComparisonMessage("");
+
+    if (
+      !comparisonEmployee ||
+      !roleId
+    ) {
+      return;
+    }
+
+    setComparisonLoading(true);
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_compare_employee_role_readiness",
+      {
+        p_employee_id:
+          comparisonEmployee.employee_id,
+        p_target_role_template_id:
+          roleId,
+      }
+    );
+
+    if (error) {
+      setComparisonMessage(
+        error.message
+      );
+      setComparisonLoading(false);
+      return;
+    }
+
+    const result =
+      (data ??
+        []) as RoleComparisonRow[];
+
+    setComparisonRows(result);
+
+    if (result.length === 0) {
+      setComparisonMessage(
+        "No role requirements were available for this comparison."
+      );
+    }
+
+    setComparisonLoading(false);
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -465,7 +685,7 @@ export default function WorkforceReadinessPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1180px]">
+                  <table className="w-full min-w-[1320px]">
                     <thead>
                       <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
                         <th className="px-6 py-4">
@@ -502,6 +722,10 @@ export default function WorkforceReadinessPage() {
 
                         <th className="px-5 py-4">
                           Status
+                        </th>
+
+                        <th className="px-5 py-4">
+                          Compare
                         </th>
                       </tr>
                     </thead>
@@ -645,6 +869,20 @@ export default function WorkforceReadinessPage() {
                                   row={row}
                                 />
                               </td>
+
+                              <td className="px-5 py-5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openComparison(
+                                      row
+                                    )
+                                  }
+                                  className="whitespace-nowrap rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/20"
+                                >
+                                  Compare Role
+                                </button>
+                              </td>
                             </tr>
                           );
                         }
@@ -654,6 +892,516 @@ export default function WorkforceReadinessPage() {
                 </div>
               )}
             </section>
+
+            {comparisonEmployee && (
+              <section
+                id="role-comparison"
+                className="mt-8 scroll-mt-8 rounded-2xl border border-cyan-500/20 bg-slate-900"
+              >
+                <div className="border-b border-slate-800 p-6 sm:p-8">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-cyan-400">
+                        Role Readiness
+                        Comparison
+                      </p>
+
+                      <h2 className="mt-2 text-2xl font-semibold">
+                        {
+                          comparisonEmployee.first_name
+                        }{" "}
+                        {
+                          comparisonEmployee.last_name
+                        }
+                      </h2>
+
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                        Compare current
+                        employee evidence
+                        against another role.
+                        This analysis does
+                        not change the
+                        employee&apos;s
+                        assigned or target
+                        role.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={
+                        closeComparison
+                      }
+                      className="self-start rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Current Role
+                      </p>
+
+                      <p className="mt-2 text-lg font-semibold">
+                        {
+                          comparisonEmployee.role_name ??
+                          "Not Assessed"
+                        }
+                      </p>
+
+                      <p className="mt-3 text-3xl font-bold text-emerald-300">
+                        {comparisonEmployee.readiness_percent !==
+                        null
+                          ? `${Math.round(
+                              Number(
+                                comparisonEmployee.readiness_percent
+                              )
+                            )}%`
+                          : "—"}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        Current assessed
+                        role readiness
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+                      <label
+                        htmlFor="compare-role-select"
+                        className="text-xs font-medium uppercase tracking-wide text-cyan-400"
+                      >
+                        Compare Role
+                      </label>
+
+                      <select
+                        id="compare-role-select"
+                        value={
+                          selectedRoleId
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          loadRoleComparison(
+                            event.target
+                              .value
+                          )
+                        }
+                        disabled={
+                          comparisonLoading
+                        }
+                        className="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400 disabled:opacity-60"
+                      >
+                        <option value="">
+                          Select a role...
+                        </option>
+
+                        {availableRoleOptions.map(
+                          (role) => (
+                            <option
+                              key={
+                                role.master_role_template_id
+                              }
+                              value={
+                                role.master_role_template_id
+                              }
+                            >
+                              {
+                                role.role_name
+                              }
+                              {" · "}
+                              {
+                                role.competency_count
+                              }{" "}
+                              competencies
+                            </option>
+                          )
+                        )}
+                      </select>
+
+                      {roleOptionsError && (
+                        <p className="mt-3 text-xs text-amber-300">
+                          Role options
+                          could not be
+                          loaded:{" "}
+                          {
+                            roleOptionsError
+                          }
+                        </p>
+                      )}
+
+                      {!roleOptionsError &&
+                        availableRoleOptions.length ===
+                          0 && (
+                          <p className="mt-3 text-xs text-slate-500">
+                            No additional
+                            roles are
+                            available for
+                            comparison.
+                          </p>
+                        )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 sm:p-8">
+                  {comparisonLoading && (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-6 text-sm text-slate-300">
+                      Calculating role
+                      readiness...
+                    </div>
+                  )}
+
+                  {!comparisonLoading &&
+                    comparisonMessage && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-sm text-amber-200">
+                        {
+                          comparisonMessage
+                        }
+                      </div>
+                    )}
+
+                  {!comparisonLoading &&
+                    comparisonSummary && (
+                      <>
+                        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              Comparing
+                              Against
+                            </p>
+
+                            <h3 className="mt-2 text-2xl font-semibold">
+                              {
+                                comparisonSummary.target_role_name
+                              }
+                            </h3>
+
+                            {comparisonSummary.target_role_department && (
+                              <p className="mt-1 text-sm text-slate-400">
+                                {
+                                  comparisonSummary.target_role_department
+                                }
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4 lg:text-right">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
+                              Fully Qualified
+                            </p>
+
+                            <p className="mt-1 text-2xl font-bold text-white">
+                              {
+                                comparisonSummary.target_competencies_ready
+                              }
+                              /
+                              {
+                                comparisonSummary.target_competencies_total
+                              }
+                            </p>
+
+                            <p className="mt-1 text-sm text-slate-400">
+                              {
+                                Number(
+                                  comparisonSummary.target_readiness_percent
+                                )
+                              }
+                              % of target
+                              competencies
+                              fully ready
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+                          <p className="text-sm leading-6 text-slate-300">
+                            <span className="font-semibold text-cyan-300">
+                              Target
+                              readiness is a
+                              strict
+                              qualification
+                              measure.
+                            </span>{" "}
+                            A competency
+                            counts as fully
+                            ready only when
+                            all required
+                            knowledge and
+                            practical
+                            evidence meets
+                            the selected
+                            role&apos;s
+                            level. A low
+                            fully-qualified
+                            percentage does
+                            not mean the
+                            employee lacks
+                            capability;
+                            existing
+                            knowledge is
+                            shown separately
+                            below.
+                          </p>
+                        </div>
+
+                        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          <ComparisonMetric
+                            label="Fully Ready"
+                            value={`${comparisonSummary.target_competencies_ready}/${comparisonSummary.target_competencies_total}`}
+                            detail={`${Number(
+                              comparisonSummary.target_readiness_percent
+                            )}% fully qualified`}
+                            valueClass={
+                              Number(
+                                comparisonSummary.target_competencies_ready
+                              ) ===
+                              Number(
+                                comparisonSummary.target_competencies_total
+                              )
+                                ? "text-emerald-300"
+                                : "text-white"
+                            }
+                          />
+
+                          <ComparisonMetric
+                            label="Knowledge Demonstrated"
+                            value={`${knowledgeDemonstratedCount}/${comparisonSummary.target_competencies_total}`}
+                            detail="Meets target knowledge level"
+                            valueClass="text-cyan-300"
+                          />
+
+                          <ComparisonMetric
+                            label="Practical Development"
+                            value={
+                              comparisonSummary.practical_gap_count
+                            }
+                            detail="Needs higher practical evidence"
+                            valueClass={
+                              Number(
+                                comparisonSummary.practical_gap_count
+                              ) > 0
+                                ? "text-amber-300"
+                                : "text-emerald-300"
+                            }
+                          />
+
+                          <ComparisonMetric
+                            label="Not Assessed"
+                            value={
+                              comparisonSummary.not_assessed_count
+                            }
+                            detail="No knowledge evidence yet"
+                            valueClass="text-slate-300"
+                          />
+                        </div>
+
+                        {(Number(
+                          comparisonSummary.knowledge_gap_count
+                        ) > 0 ||
+                          Number(
+                            comparisonSummary.reverification_due_count
+                          ) > 0 ||
+                          Number(
+                            comparisonSummary.reverification_required_count
+                          ) > 0) && (
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            {Number(
+                              comparisonSummary.knowledge_gap_count
+                            ) > 0 && (
+                              <MiniMetric
+                                label="Knowledge Gaps"
+                                value={
+                                  comparisonSummary.knowledge_gap_count
+                                }
+                                classes="border-rose-500/30 bg-rose-500/10 text-rose-200"
+                              />
+                            )}
+
+                            {Number(
+                              comparisonSummary.reverification_due_count
+                            ) > 0 && (
+                              <MiniMetric
+                                label="Reverification Due"
+                                value={
+                                  comparisonSummary.reverification_due_count
+                                }
+                                classes="border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                              />
+                            )}
+
+                            {Number(
+                              comparisonSummary.reverification_required_count
+                            ) > 0 && (
+                              <MiniMetric
+                                label="Reverification Required"
+                                value={
+                                  comparisonSummary.reverification_required_count
+                                }
+                                classes="border-orange-500/30 bg-orange-500/10 text-orange-200"
+                              />
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-8 overflow-hidden rounded-xl border border-slate-800">
+                          <div className="border-b border-slate-800 bg-slate-950/60 px-5 py-4">
+                            <h4 className="font-semibold">
+                              Competency
+                              Comparison
+                            </h4>
+
+                            <p className="mt-1 text-sm text-slate-500">
+                              Employee
+                              evidence
+                              compared with
+                              the selected
+                              role&apos;s
+                              required level.
+                            </p>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[900px]">
+                              <thead>
+                                <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
+                                  <th className="px-5 py-4">
+                                    Competency
+                                  </th>
+
+                                  <th className="px-5 py-4">
+                                    Knowledge
+                                  </th>
+
+                                  <th className="px-5 py-4">
+                                    Practical
+                                  </th>
+
+                                  <th className="px-5 py-4">
+                                    Target
+                                  </th>
+
+                                  <th className="px-5 py-4">
+                                    Status
+                                  </th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                {comparisonRows.map(
+                                  (row) => (
+                                    <tr
+                                      key={
+                                        row.master_competency_template_id
+                                      }
+                                      className="border-b border-slate-800/70"
+                                    >
+                                      <td className="px-5 py-4">
+                                        <p className="font-medium text-white">
+                                          {
+                                            row.competency_name
+                                          }
+                                        </p>
+
+                                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                                          {row.competency_category && (
+                                            <span>
+                                              {
+                                                row.competency_category
+                                              }
+                                            </span>
+                                          )}
+
+                                          {row.competency_is_critical && (
+                                            <span className="text-rose-300">
+                                              Critical
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+
+                                      <td className="px-5 py-4">
+                                        <LevelValue
+                                          level={
+                                            row.current_knowledge_level
+                                          }
+                                          ready={
+                                            row.knowledge_target_ready
+                                          }
+                                        />
+                                      </td>
+
+                                      <td className="px-5 py-4">
+                                        {row.practical_verification_required ? (
+                                          <LevelValue
+                                            level={
+                                              row.current_practical_level
+                                            }
+                                            ready={
+                                              row.practical_target_ready
+                                            }
+                                          />
+                                        ) : (
+                                          <span className="text-sm text-slate-500">
+                                            Not
+                                            required
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      <td className="px-5 py-4">
+                                        <span className="font-semibold text-white">
+                                          Level{" "}
+                                          {
+                                            row.target_required_level
+                                          }
+                                        </span>
+                                      </td>
+
+                                      <td className="px-5 py-4">
+                                        <ComparisonStatusBadge
+                                          status={
+                                            row.target_status
+                                          }
+                                        />
+                                      </td>
+                                    </tr>
+                                  )
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                  {!comparisonLoading &&
+                    !comparisonSummary &&
+                    !comparisonMessage && (
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-8 text-center">
+                        <p className="font-medium">
+                          Select a role
+                          above to compare
+                          readiness.
+                        </p>
+
+                        <p className="mt-2 text-sm text-slate-500">
+                          This will use the
+                          employee&apos;s
+                          reusable
+                          knowledge and
+                          practical
+                          evidence against
+                          the selected
+                          master role.
+                        </p>
+                      </div>
+                    )}
+                </div>
+              </section>
+            )}
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
@@ -711,6 +1459,57 @@ function Metric({
       <p className="mt-2 text-xs text-slate-500">
         {detail}
       </p>
+    </div>
+  );
+}
+
+function ComparisonMetric({
+  label,
+  value,
+  detail,
+  valueClass = "",
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
+      <p className="text-sm text-slate-400">
+        {label}
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-bold ${valueClass}`}
+      >
+        {value}
+      </p>
+
+      <p className="mt-2 text-xs leading-5 text-slate-500">
+        {detail}
+      </p>
+    </div>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+  classes,
+}: {
+  label: string;
+  value: string | number;
+  classes: string;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-4 py-2 text-sm ${classes}`}
+    >
+      <span className="font-semibold">
+        {value}
+      </span>{" "}
+      {label}
     </div>
   );
 }
@@ -789,6 +1588,34 @@ function RateValue({
   );
 }
 
+function LevelValue({
+  level,
+  ready,
+}: {
+  level: number | null;
+  ready: boolean;
+}) {
+  if (level === null) {
+    return (
+      <span className="text-sm text-slate-600">
+        —
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`font-semibold ${
+        ready
+          ? "text-emerald-300"
+          : "text-amber-300"
+      }`}
+    >
+      Level {level}
+    </span>
+  );
+}
+
 function CountBadge({
   value,
   goodWhenZero = false,
@@ -854,6 +1681,63 @@ function StatusBadge({
   return (
     <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-300">
       Action Needed
+    </span>
+  );
+}
+
+function ComparisonStatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  let label = status;
+  let classes =
+    "bg-slate-800 text-slate-300";
+
+  switch (status) {
+    case "ready":
+      label = "Ready";
+      classes =
+        "bg-emerald-500/15 text-emerald-300";
+      break;
+
+    case "knowledge_gap":
+      label = "Knowledge Gap";
+      classes =
+        "bg-rose-500/15 text-rose-300";
+      break;
+
+    case "practical_gap":
+      label = "Practical Gap";
+      classes =
+        "bg-amber-500/15 text-amber-300";
+      break;
+
+    case "not_assessed":
+      label = "Not Assessed";
+      classes =
+        "bg-slate-800 text-slate-400";
+      break;
+
+    case "reverification_due":
+      label = "Reverification Due";
+      classes =
+        "bg-cyan-500/15 text-cyan-300";
+      break;
+
+    case "reverification_required":
+      label =
+        "Reverification Required";
+      classes =
+        "bg-orange-500/15 text-orange-300";
+      break;
+  }
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${classes}`}
+    >
+      {label}
     </span>
   );
 }
