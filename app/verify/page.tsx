@@ -17,11 +17,37 @@ type VerificationEmployee = {
   assignment_id: string;
 };
 
+type VerificationReadinessRow = {
+  employee_id: string;
+  master_competency_template_id: string;
+  practical_verification_required: boolean;
+  practical_ready: boolean;
+  reverification_due: boolean;
+  verification_expired: boolean;
+};
+
+type VerificationPlanRow = {
+  development_plan_id: string;
+  employee_id: string;
+  master_competency_template_id: string | null;
+  resolution_status: string;
+};
+
+type EmployeeVerificationWork = {
+  needsVerification: number;
+  reverification: number;
+  planEvidence: number;
+  totalOpenWork: number;
+};
+
 export default function VerifyPage() {
   const router = useRouter();
 
   const [employees, setEmployees] =
     useState<VerificationEmployee[]>([]);
+
+  const [workByEmployee, setWorkByEmployee] =
+    useState<Record<string, EmployeeVerificationWork>>({});
 
   const [message, setMessage] =
     useState("Loading verification assignments...");
@@ -60,6 +86,127 @@ export default function VerifyPage() {
 
       setEmployees(rows);
 
+      if (rows.length > 0) {
+        const employeeIds = rows.map(
+          (employee) => employee.employee_id
+        );
+
+        const [readinessResult, planResult] =
+          await Promise.all([
+            supabase
+              .from(
+                "v_assessment_competency_readiness_current"
+              )
+              .select(`
+                employee_id,
+                master_competency_template_id,
+                practical_verification_required,
+                practical_ready,
+                reverification_due,
+                verification_expired
+              `)
+              .in("employee_id", employeeIds),
+
+            supabase.rpc(
+              "wri_list_development_plan_resolutions",
+              {
+                p_employee_id: null,
+                p_resolution_status: null,
+              }
+            ),
+          ]);
+
+        if (readinessResult.error) {
+          console.error(
+            "Unable to load practical verification work:",
+            readinessResult.error
+          );
+        }
+
+        if (planResult.error) {
+          console.error(
+            "Unable to load Development Plan evidence work:",
+            planResult.error
+          );
+        }
+
+        const readinessRows =
+          (readinessResult.data ?? []) as VerificationReadinessRow[];
+
+        const planRows =
+          (planResult.data ?? []) as VerificationPlanRow[];
+
+        const nextWork: Record<
+          string,
+          EmployeeVerificationWork
+        > = {};
+
+        rows.forEach((employee) => {
+          nextWork[employee.employee_id] = {
+            needsVerification: 0,
+            reverification: 0,
+            planEvidence: 0,
+            totalOpenWork: 0,
+          };
+        });
+
+        readinessRows.forEach((row) => {
+          if (!row.practical_verification_required) {
+            return;
+          }
+
+          const summary = nextWork[row.employee_id];
+
+          if (!summary) {
+            return;
+          }
+
+          if (!row.practical_ready) {
+            summary.needsVerification += 1;
+          }
+
+          if (
+            row.reverification_due ||
+            row.verification_expired
+          ) {
+            summary.reverification += 1;
+          }
+        });
+
+        planRows.forEach((plan) => {
+          if (
+            ![
+              "awaiting_verification",
+              "awaiting_reverification",
+            ].includes(plan.resolution_status)
+          ) {
+            return;
+          }
+
+          const summary =
+            nextWork[plan.employee_id];
+
+          if (!summary) {
+            return;
+          }
+
+          summary.planEvidence += 1;
+        });
+
+        Object.values(nextWork).forEach(
+          (summary) => {
+            summary.totalOpenWork =
+              summary.needsVerification +
+              summary.reverification +
+              summary.planEvidence;
+          }
+        );
+
+        setWorkByEmployee(nextWork);
+      } else {
+        setWorkByEmployee({});
+      }
+
       if (rows.length === 0) {
         setMessage(
           "You do not currently have any practical-verification assignments."
@@ -91,6 +238,51 @@ export default function VerifyPage() {
     [employees]
   );
 
+  const employeesWithOpenWork = useMemo(
+    () =>
+      employees.filter(
+        (employee) =>
+          (workByEmployee[
+            employee.employee_id
+          ]?.totalOpenWork ?? 0) > 0
+      ).length,
+    [employees, workByEmployee]
+  );
+
+  const totalPlanEvidence = useMemo(
+    () =>
+      Object.values(workByEmployee).reduce(
+        (sum, work) =>
+          sum + work.planEvidence,
+        0
+      ),
+    [workByEmployee]
+  );
+
+  const sortedEmployees = useMemo(
+    () =>
+      [...employees].sort((a, b) => {
+        const aWork =
+          workByEmployee[
+            a.employee_id
+          ]?.totalOpenWork ?? 0;
+
+        const bWork =
+          workByEmployee[
+            b.employee_id
+          ]?.totalOpenWork ?? 0;
+
+        if (bWork !== aWork) {
+          return bWork - aWork;
+        }
+
+        return `${a.last_name} ${a.first_name}`.localeCompare(
+          `${b.last_name} ${b.first_name}`
+        );
+      }),
+    [employees, workByEmployee]
+  );
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-6xl">
@@ -116,52 +308,50 @@ export default function VerifyPage() {
 
         {employees.length > 0 && (
           <>
-            <section className="mb-8 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm text-slate-400">
-                  Employees Available
-                </p>
+            <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <VerifyMetric
+                label="Employees Available"
+                value={employees.length}
+              />
 
-                <p className="mt-2 text-3xl font-semibold">
-                  {employees.length}
-                </p>
-              </div>
+              <VerifyMetric
+                label="Employees With Work"
+                value={employeesWithOpenWork}
+                valueClass="text-amber-300"
+              />
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm text-slate-400">
-                  Company-Scope Access
-                </p>
+              <VerifyMetric
+                label="Plan Evidence"
+                value={totalPlanEvidence}
+                valueClass="text-amber-300"
+              />
 
-                <p className="mt-2 text-3xl font-semibold text-cyan-400">
-                  {companyWideCount}
-                </p>
-              </div>
+              <VerifyMetric
+                label="Company Scope"
+                value={companyWideCount}
+                valueClass="text-cyan-300"
+              />
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-                <p className="text-sm text-slate-400">
-                  Employee-Specific Access
-                </p>
-
-                <p className="mt-2 text-3xl font-semibold text-emerald-300">
-                  {employeeSpecificCount}
-                </p>
-              </div>
+              <VerifyMetric
+                label="Employee Scope"
+                value={employeeSpecificCount}
+                valueClass="text-emerald-300"
+              />
             </section>
 
             <section>
               <div className="mb-5">
                 <h2 className="text-2xl font-semibold">
-                  Employees You Can Verify
+                  Verification Work Queue
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-400">
-                  Your verifier assignment determines who appears
-                  here.
+                  Employees with active verification work appear first. Your verifier assignment still controls access.
                 </p>
               </div>
 
               <div className="grid gap-5 md:grid-cols-2">
-                {employees.map((employee) => {
+                {sortedEmployees.map((employee) => {
                   const fullName =
                     `${employee.first_name} ${employee.last_name}`.trim();
 
@@ -169,6 +359,16 @@ export default function VerifyPage() {
                     employee.verifier_scope === "client"
                       ? "Entire Company"
                       : "Specific Employee";
+
+                  const work =
+                    workByEmployee[
+                      employee.employee_id
+                    ] ?? {
+                      needsVerification: 0,
+                      reverification: 0,
+                      planEvidence: 0,
+                      totalOpenWork: 0,
+                    };
 
                   return (
                     <article
@@ -197,7 +397,74 @@ export default function VerifyPage() {
                         </span>
                       </div>
 
-                      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                      <div
+                        className={`mt-6 rounded-xl border p-4 ${
+                          work.totalOpenWork > 0
+                            ? "border-amber-500/30 bg-amber-500/10"
+                            : "border-emerald-500/20 bg-emerald-500/5"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              Verification Work
+                            </p>
+
+                            <p
+                              className={`mt-1 text-lg font-semibold ${
+                                work.totalOpenWork > 0
+                                  ? "text-amber-300"
+                                  : "text-emerald-300"
+                              }`}
+                            >
+                              {work.totalOpenWork > 0
+                                ? `${work.totalOpenWork} Open ${
+                                    work.totalOpenWork === 1
+                                      ? "Item"
+                                      : "Items"
+                                  }`
+                                : "No Open Work"}
+                            </p>
+                          </div>
+
+                          {work.planEvidence > 0 && (
+                            <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-300">
+                              {work.planEvidence} Plan Evidence
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-3 gap-3">
+                          <div>
+                            <p className="text-xs text-slate-500">
+                              Verify
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-200">
+                              {work.needsVerification}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-500">
+                              Reverify
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-200">
+                              {work.reverification}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-500">
+                              Plan Evidence
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-200">
+                              {work.planEvidence}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
                         <p className="text-xs uppercase tracking-wide text-slate-500">
                           Verifier Role
                         </p>
@@ -213,7 +480,9 @@ export default function VerifyPage() {
                           href={`/employees/${employee.employee_id}/practical-verification`}
                           className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
                         >
-                          Practical Verification
+                          {work.totalOpenWork > 0
+                            ? "Open Verification Work"
+                            : "Practical Verification"}
                         </Link>
 
                         <Link
@@ -234,3 +503,28 @@ export default function VerifyPage() {
     </main>
   );
 }
+
+function VerifyMetric({
+  label,
+  value,
+  valueClass = "",
+}: {
+  label: string;
+  value: number;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <p className="text-sm text-slate-400">
+        {label}
+      </p>
+
+      <p
+        className={`mt-2 text-3xl font-semibold ${valueClass}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
