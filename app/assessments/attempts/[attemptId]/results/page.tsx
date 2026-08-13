@@ -12,6 +12,7 @@ type Attempt = {
   assessment_id: string;
   completed_at: string | null;
   development_plan_id: string | null;
+  attempt_mode: string | null;
 };
 
 type Employee = {
@@ -86,6 +87,9 @@ export default function AssessmentResultsPage() {
   const [overallScore, setOverallScore] = useState(0);
   const [safetyScore, setSafetyScore] = useState<number | null>(null);
 
+  const [targetRoleName, setTargetRoleName] =
+    useState<string | null>(null);
+
   const [message, setMessage] = useState("Loading results...");
 
   useEffect(() => {
@@ -116,7 +120,8 @@ export default function AssessmentResultsPage() {
           employee_id,
           assessment_id,
           completed_at,
-          development_plan_id`)
+          development_plan_id,
+          attempt_mode`)
         .eq("id", attemptId)
         .maybeSingle();
 
@@ -142,6 +147,39 @@ export default function AssessmentResultsPage() {
       }
 
       setAttempt(attemptData);
+
+      if (
+        attemptData.attempt_mode ===
+          "role_development_assessment" &&
+        attemptData.development_plan_id
+      ) {
+        const {
+          data: developmentPlanData,
+          error: developmentPlanError,
+        } = await supabase
+          .from("development_plans")
+          .select("target_role_name_snapshot")
+          .eq(
+            "id",
+            attemptData.development_plan_id
+          )
+          .maybeSingle();
+
+        if (developmentPlanError) {
+          setMessage(
+            developmentPlanError.message
+          );
+          return;
+        }
+
+        setTargetRoleName(
+          developmentPlanData
+            ?.target_role_name_snapshot ??
+            null
+        );
+      } else {
+        setTargetRoleName(null);
+      }
 
       if (attemptData.development_plan_id) {
         const {
@@ -538,7 +576,13 @@ export default function AssessmentResultsPage() {
       <div className="mx-auto max-w-6xl">
         <SystemHeader
           title={assessment.name}
-          subtitle={`${employee.first_name} ${employee.last_name}`}
+          subtitle={
+            attempt.attempt_mode ===
+              "role_development_assessment" &&
+            targetRoleName
+              ? `Role Development · ${targetRoleName} · ${employee.first_name} ${employee.last_name}`
+              : `${employee.first_name} ${employee.last_name}`
+          }
           backHref="/assessments"
           backLabel="Assessments"
           showHome={true}
