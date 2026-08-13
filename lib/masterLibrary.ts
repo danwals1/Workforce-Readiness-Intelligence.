@@ -100,6 +100,28 @@ export type AnswerKey = {
   scoring_notes: string | null;
 };
 
+export type MasterCompetencyAssessmentCoverage = {
+  master_competency_template_id: string;
+  industry_id: string;
+  competency_name: string;
+  competency_category: string | null;
+
+  assessment_id: string | null;
+  assessment_family_id: string | null;
+  assessment_name: string | null;
+
+  question_count: number;
+  answer_key_count: number;
+
+  coverage_status:
+    | "ready"
+    | "needs_questions"
+    | "needs_answer_keys"
+    | "needs_assessment";
+
+  assessment_ready: boolean;
+};
+
 export type AdoptionStatusRow = {
   id: string;
   client_id: string;
@@ -296,6 +318,18 @@ export async function listCurrentAssessments(): Promise<Assessment[]> {
     .order("name");
   if (error) throw error;
   return data as Assessment[];
+}
+
+export async function listMasterCompetencyAssessmentCoverage(): Promise<
+  MasterCompetencyAssessmentCoverage[]
+> {
+  const { data, error } = await supabase.rpc(
+    "wri_master_competency_assessment_coverage"
+  );
+
+  if (error) throw error;
+
+  return (data ?? []) as MasterCompetencyAssessmentCoverage[];
 }
 
 export async function getAssessmentFamily(familyId: string): Promise<Assessment[]> {

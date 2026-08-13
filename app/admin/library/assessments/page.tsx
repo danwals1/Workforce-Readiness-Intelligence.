@@ -8,11 +8,13 @@ import {
   listCurrentCompetencyTemplates,
   listCurrentRoleTemplates,
   listIndustries,
+  listMasterCompetencyAssessmentCoverage,
   type Assessment,
   type AssessmentType,
   type Industry,
   type MasterCompetencyTemplate,
   type MasterRoleTemplate,
+  type MasterCompetencyAssessmentCoverage,
 } from "@/lib/masterLibrary";
 
 const TYPE_LABELS: Record<AssessmentType, string> = {
@@ -26,6 +28,8 @@ export default function AssessmentsPage() {
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [roles, setRoles] = useState<MasterRoleTemplate[]>([]);
   const [competencies, setCompetencies] = useState<MasterCompetencyTemplate[]>([]);
+  const [coverage, setCoverage] =
+    useState<MasterCompetencyAssessmentCoverage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -41,16 +45,18 @@ export default function AssessmentsPage() {
   async function load() {
     setLoading(true);
     try {
-      const [a, i, r, c] = await Promise.all([
+      const [a, i, r, c, coverageRows] = await Promise.all([
         listCurrentAssessments(),
         listIndustries(),
         listCurrentRoleTemplates(),
         listCurrentCompetencyTemplates(),
+        listMasterCompetencyAssessmentCoverage(),
       ]);
       setAssessments(a);
       setIndustries(i);
       setRoles(r);
       setCompetencies(c);
+      setCoverage(coverageRows);
       if (!industryId && i.length > 0) setIndustryId(i[0].id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load assessments.");
@@ -73,6 +79,73 @@ export default function AssessmentsPage() {
   function competencyName(id: string | null) {
     return competencies.find((c) => c.id === id)?.name ?? null;
   }
+
+  function coverageLabel(
+    status: MasterCompetencyAssessmentCoverage["coverage_status"]
+  ) {
+    switch (status) {
+      case "ready":
+        return "Ready";
+      case "needs_questions":
+        return "Needs Questions";
+      case "needs_answer_keys":
+        return "Needs Answer Keys";
+      case "needs_assessment":
+        return "Needs Assessment";
+    }
+  }
+
+  function coverageClasses(
+    status: MasterCompetencyAssessmentCoverage["coverage_status"]
+  ) {
+    switch (status) {
+      case "ready":
+        return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+      case "needs_questions":
+        return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+      case "needs_answer_keys":
+        return "border-orange-500/30 bg-orange-500/10 text-orange-300";
+      case "needs_assessment":
+        return "border-slate-700 bg-slate-800 text-slate-300";
+    }
+  }
+
+  function beginCompetencyAssessment(
+    row: MasterCompetencyAssessmentCoverage
+  ) {
+    setIndustryId(row.industry_id);
+    setType("competency");
+    setCompetencyTemplateId(
+      row.master_competency_template_id
+    );
+    setRoleTemplateId("");
+    setTargetRoleTemplateId("");
+    setName(
+      `${row.competency_name} Competency Assessment`
+    );
+    setShowForm(true);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  const readyCount = coverage.filter(
+    (row) => row.coverage_status === "ready"
+  ).length;
+
+  const needsQuestionsCount = coverage.filter(
+    (row) => row.coverage_status === "needs_questions"
+  ).length;
+
+  const needsAnswerKeysCount = coverage.filter(
+    (row) => row.coverage_status === "needs_answer_keys"
+  ).length;
+
+  const needsAssessmentCount = coverage.filter(
+    (row) => row.coverage_status === "needs_assessment"
+  ).length;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -215,6 +288,134 @@ export default function AssessmentsPage() {
             {saving ? "Saving…" : "Create Assessment"}
           </button>
         </form>
+      )}
+
+      {!loading && (
+        <section className="space-y-5 rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <div>
+            <h3 className="text-lg font-semibold">
+              Assessment Coverage
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-400">
+              Current Master Library competency assessment readiness.
+              Coverage requires a current competency assessment,
+              Master-backed questions, and complete secure answer keys.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-emerald-300">
+                Ready
+              </p>
+              <p className="mt-2 text-3xl font-semibold">
+                {readyCount}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-amber-300">
+                Needs Questions
+              </p>
+              <p className="mt-2 text-3xl font-semibold">
+                {needsQuestionsCount}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-orange-300">
+                Needs Answer Keys
+              </p>
+              <p className="mt-2 text-3xl font-semibold">
+                {needsAnswerKeysCount}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Needs Assessment
+              </p>
+              <p className="mt-2 text-3xl font-semibold">
+                {needsAssessmentCount}
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-slate-800">
+            <div className="divide-y divide-slate-800">
+              {coverage.map((row) => (
+                <div
+                  key={row.master_competency_template_id}
+                  className="flex flex-col gap-4 bg-slate-950/40 p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">
+                        {row.competency_name}
+                      </p>
+
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${coverageClasses(
+                          row.coverage_status
+                        )}`}
+                      >
+                        {coverageLabel(
+                          row.coverage_status
+                        )}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {row.competency_category ?? "Uncategorized"}
+                      {" · "}
+                      {row.question_count} Master-backed question
+                      {row.question_count === 1 ? "" : "s"}
+                      {" · "}
+                      {row.answer_key_count} answer key
+                      {row.answer_key_count === 1 ? "" : "s"}
+                    </p>
+
+                    {row.assessment_name && (
+                      <p className="mt-1 text-sm text-slate-400">
+                        {row.assessment_name}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="shrink-0">
+                    {row.assessment_family_id ? (
+                      <Link
+                        href={`/admin/library/assessments/${row.assessment_family_id}`}
+                        className="inline-flex rounded-lg border border-cyan-600 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+                      >
+                        {row.coverage_status === "ready"
+                          ? "Open Assessment"
+                          : "Complete Assessment"}
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          beginCompetencyAssessment(row)
+                        }
+                        className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                      >
+                        Create Assessment
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {coverage.length === 0 && (
+                <div className="p-5 text-sm text-slate-500">
+                  No competency coverage data is available.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
       {loading ? (
