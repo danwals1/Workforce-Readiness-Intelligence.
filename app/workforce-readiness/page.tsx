@@ -161,6 +161,11 @@ export default function WorkforceReadinessPage() {
     setComparisonMessage,
   ] = useState("");
 
+  const [
+    creatingRolePlan,
+    setCreatingRolePlan,
+  ] = useState(false);
+
   const loadPage =
     useCallback(async () => {
       setLoading(true);
@@ -434,6 +439,7 @@ export default function WorkforceReadinessPage() {
     setSelectedRoleId("");
     setComparisonRows([]);
     setComparisonMessage("");
+    setCreatingRolePlan(false);
 
     window.setTimeout(() => {
       document
@@ -452,6 +458,54 @@ export default function WorkforceReadinessPage() {
     setSelectedRoleId("");
     setComparisonRows([]);
     setComparisonMessage("");
+    setCreatingRolePlan(false);
+  }
+
+  async function createRoleDevelopmentPlan() {
+    if (
+      !comparisonEmployee ||
+      !selectedRoleId ||
+      !comparisonSummary
+    ) {
+      return;
+    }
+
+    setCreatingRolePlan(true);
+    setComparisonMessage("");
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      "wri_create_role_comparison_development_plan",
+      {
+        p_employee_id:
+          comparisonEmployee.employee_id,
+        p_target_role_template_id:
+          selectedRoleId,
+        p_due_date: null,
+      }
+    );
+
+    if (error) {
+      setComparisonMessage(
+        error.message
+      );
+      setCreatingRolePlan(false);
+      return;
+    }
+
+    if (!data) {
+      setComparisonMessage(
+        "Role Development Plan could not be created."
+      );
+      setCreatingRolePlan(false);
+      return;
+    }
+
+    router.push(
+      `/development-plans/${data}`
+    );
   }
 
   async function loadRoleComparison(
@@ -460,6 +514,7 @@ export default function WorkforceReadinessPage() {
     setSelectedRoleId(roleId);
     setComparisonRows([]);
     setComparisonMessage("");
+    setCreatingRolePlan(false);
 
     if (
       !comparisonEmployee ||
@@ -1088,31 +1143,55 @@ export default function WorkforceReadinessPage() {
                             )}
                           </div>
 
-                          <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4 lg:text-right">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Fully Qualified
-                            </p>
+                          <div className="flex flex-col gap-3 lg:items-end">
+                            <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-5 py-4 lg:text-right">
+                              <p className="text-xs uppercase tracking-wide text-slate-500">
+                                Fully Qualified
+                              </p>
 
-                            <p className="mt-1 text-2xl font-bold text-white">
-                              {
-                                comparisonSummary.target_competencies_ready
-                              }
-                              /
-                              {
+                              <p className="mt-1 text-2xl font-bold text-white">
+                                {
+                                  comparisonSummary.target_competencies_ready
+                                }
+                                /
+                                {
+                                  comparisonSummary.target_competencies_total
+                                }
+                              </p>
+
+                              <p className="mt-1 text-sm text-slate-400">
+                                {
+                                  Number(
+                                    comparisonSummary.target_readiness_percent
+                                  )
+                                }
+                                % of target
+                                competencies
+                                fully ready
+                              </p>
+                            </div>
+
+                            {Number(
+                              comparisonSummary.target_competencies_ready
+                            ) <
+                              Number(
                                 comparisonSummary.target_competencies_total
-                              }
-                            </p>
-
-                            <p className="mt-1 text-sm text-slate-400">
-                              {
-                                Number(
-                                  comparisonSummary.target_readiness_percent
-                                )
-                              }
-                              % of target
-                              competencies
-                              fully ready
-                            </p>
+                              ) && (
+                              <button
+                                type="button"
+                                onClick={
+                                  createRoleDevelopmentPlan
+                                }
+                                disabled={
+                                  creatingRolePlan
+                                }
+                                className="rounded-lg bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {creatingRolePlan
+                                  ? "Creating Development Plan..."
+                                  : "Create Role Development Plan"}
+                              </button>
+                            )}
                           </div>
                         </div>
 

@@ -45,6 +45,19 @@ type DevelopmentPlan = {
   awaiting_evidence_since: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
+
+  origin:
+    | "current_readiness"
+    | "manual"
+    | "role_comparison";
+
+  target_master_role_template_id:
+    | string
+    | null;
+
+  target_role_name_snapshot:
+    | string
+    | null;
 };
 
 type DevelopmentActivity = {
@@ -479,9 +492,48 @@ useState(false);
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) throw new Error("Development plan not found or access denied.");
-    const loadedPlan =
-      data as DevelopmentPlan;
+    if (!data) {
+      throw new Error(
+        "Development plan not found or access denied."
+      );
+    }
+
+    const {
+      data: originData,
+      error: originError,
+    } = await supabase
+      .from("development_plans")
+      .select(`
+        origin,
+        target_master_role_template_id,
+        target_role_name_snapshot
+      `)
+      .eq("id", planId)
+      .maybeSingle();
+
+    if (originError) {
+      throw originError;
+    }
+
+    const loadedPlan = {
+      ...data,
+
+      origin:
+        originData?.origin ??
+        (data.action_key
+          ? "current_readiness"
+          : "manual"),
+
+      target_master_role_template_id:
+        originData
+          ?.target_master_role_template_id ??
+        null,
+
+      target_role_name_snapshot:
+        originData
+          ?.target_role_name_snapshot ??
+        null,
+    } as DevelopmentPlan;
 
     setPlan(loadedPlan);
 
@@ -946,7 +998,24 @@ await refreshWorkspace();
   }
 
 
-  function resolutionDescription(status: string) {
+  function resolutionDescription(
+    currentPlan: DevelopmentPlan
+  ) {
+    if (
+      currentPlan.origin ===
+        "role_comparison" &&
+      currentPlan.resolution_status ===
+        "development_in_progress"
+    ) {
+      return currentPlan
+        .target_role_name_snapshot
+        ? `Complete the development activities below to build readiness for ${currentPlan.target_role_name_snapshot}.`
+        : "Complete the development activities below to build readiness for the target role.";
+    }
+
+    const status =
+      currentPlan.resolution_status;
+
     if (status === "awaiting_reassessment") {
       return "Development work is complete. The employee must now complete a reassessment before this readiness gap can be resolved.";
     }
@@ -1053,8 +1122,18 @@ return (
               ? ` · ${plan.employee_number}`
               : ""
           }`}
-          backHref="/readiness-actions"
-          backLabel="Readiness Actions"
+          backHref={
+            plan.origin ===
+            "role_comparison"
+              ? "/workforce-readiness"
+              : "/readiness-actions"
+          }
+          backLabel={
+            plan.origin ===
+            "role_comparison"
+              ? "Workforce Readiness"
+              : "Readiness Actions"
+          }
           showHome={true}
           showSignOut={true}
         >
@@ -1838,9 +1917,14 @@ Next Required Action
 
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-xl font-semibold">
-                  {nextActionLabel(
-                    plan.resolution_status
-                  )}
+                  {plan.origin ===
+                    "role_comparison" &&
+                  plan.resolution_status ===
+                    "development_in_progress"
+                    ? "Build Target Role Readiness"
+                    : nextActionLabel(
+                        plan.resolution_status
+                      )}
                 </h2>
 
                 <span
@@ -1848,16 +1932,19 @@ Next Required Action
                     plan.resolution_status
                   )}`}
                 >
-                  {plan.readiness_action_still_open === false
-                    ? "Readiness Gap Closed"
-                    : plan.readiness_action_still_open === true
-                      ? "Readiness Gap Open"
-                      : "Readiness Status Unavailable"}
+                  {plan.origin ===
+                  "role_comparison"
+                    ? "Role Development"
+                    : plan.readiness_action_still_open === false
+                      ? "Readiness Gap Closed"
+                      : plan.readiness_action_still_open === true
+                        ? "Readiness Gap Open"
+                        : "Readiness Status Unavailable"}
                 </span>
               </div>
 
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                {resolutionDescription(plan.resolution_status)}
+                {resolutionDescription(plan)}
               </p>
             </div>
 
@@ -1904,7 +1991,14 @@ Next Required Action
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold">Development Activities</h2>
-                <p className="mt-1 text-sm text-slate-400">Track the work required to close this readiness gap.</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  {plan.origin ===
+                  "role_comparison"
+                    ? plan.target_role_name_snapshot
+                      ? `Track the work required to build readiness for ${plan.target_role_name_snapshot}.`
+                      : "Track the work required to build readiness for the target role."
+                    : "Track the work required to close this readiness gap."}
+                </p>
               </div>
               {plan.resolution_status === "development_in_progress" &&
                 plan.status !== "cancelled" && (
@@ -2099,10 +2193,51 @@ Next Required Action
 
           <aside className="space-y-5">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Created From</p>
-              <p className="mt-3 font-semibold">{plan.action_label || "Development Plan"}</p>
-              {plan.competency_name_snapshot && <p className="mt-2 text-sm text-slate-400">{plan.competency_name_snapshot}</p>}
-              <p className="mt-4 text-xs text-slate-500">Readiness Action Queue</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Created From
+              </p>
+
+              <p className="mt-3 font-semibold">
+                {plan.origin ===
+                "role_comparison"
+                  ? "Role Development"
+                  : plan.action_label ||
+                    "Development Plan"}
+              </p>
+
+              {plan.origin ===
+              "role_comparison" ? (
+                <>
+                  {plan.target_role_name_snapshot && (
+                    <p className="mt-2 text-sm text-slate-300">
+                      {
+                        plan.target_role_name_snapshot
+                      }
+                    </p>
+                  )}
+
+                  <p className="mt-4 text-xs text-slate-500">
+                    Workforce Readiness
+                    Comparison
+                  </p>
+                </>
+              ) : (
+                <>
+                  {plan.competency_name_snapshot && (
+                    <p className="mt-2 text-sm text-slate-400">
+                      {
+                        plan.competency_name_snapshot
+                      }
+                    </p>
+                  )}
+
+                  <p className="mt-4 text-xs text-slate-500">
+                    {plan.origin === "manual"
+                      ? "Manual Development Plan"
+                      : "Readiness Action Queue"}
+                  </p>
+                </>
+              )}
             </div>
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
