@@ -724,6 +724,61 @@ const uniqueVerifiedCompetencies =
       [history]
     );
 
+
+  const latestVerificationByCompetency =
+    useMemo(() => {
+      const latest =
+        new Map<string, VerificationHistory>();
+
+      for (const item of history) {
+        const existing =
+          latest.get(
+            item.master_competency_template_id
+          );
+
+        if (!existing) {
+          latest.set(
+            item.master_competency_template_id,
+            item
+          );
+          continue;
+        }
+
+        const itemTime =
+          new Date(
+            item.verified_at ??
+              item.created_at
+          ).getTime();
+
+        const existingTime =
+          new Date(
+            existing.verified_at ??
+              existing.created_at
+          ).getTime();
+
+        if (itemTime > existingTime) {
+          latest.set(
+            item.master_competency_template_id,
+            item
+          );
+        }
+      }
+
+      return Array.from(
+        latest.values()
+      ).sort(
+        (a, b) =>
+          new Date(
+            b.verified_at ??
+              b.created_at
+          ).getTime() -
+          new Date(
+            a.verified_at ??
+              a.created_at
+          ).getTime()
+      );
+    }, [history]);
+
   if (!employee) {
     return (
       <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -1486,119 +1541,205 @@ const uniqueVerifiedCompetencies =
 
           {history.length === 0 ? (
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
-              No practical verification
-              history has been recorded yet.
+              No practical verification history has been recorded yet.
             </div>
           ) : (
-            <div className="space-y-4">
-              {history.map(
-                (item) => (
-                  <article
-                    key={
-                      item.verification_id
-                    }
-                    className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:p-6"
-                  >
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="max-w-3xl">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {item.competency_category && (
-                            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-                              {
-                                item.competency_category
-                              }
-                            </span>
-                          )}
+            <div className="space-y-8">
 
-                          {item.competency_is_critical && (
-                            <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
-                              Critical
-                            </span>
-                          )}
+              {/* Latest Verification by Competency */}
 
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${verificationStatusClasses(
-                              item.status
-                            )}`}
-                          >
-                            {item.status}
-                          </span>
-                        </div>
+              <div>
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold">
+                    Latest Verification by Competency
+                  </h3>
 
-                        <h3 className="mt-3 text-xl font-semibold">
-                          {
-                            item.competency_name
-                          }
-                        </h3>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Most recent practical verification recorded for each competency.
+                  </p>
+                </div>
 
-                        <p className="mt-3 text-sm text-slate-400">
-                          Verified by{" "}
-                          <span className="font-medium text-slate-300">
-                            {verifierName(
-                              item
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {latestVerificationByCompetency.map(
+                    (item) => (
+                      <article
+                        key={
+                          item.master_competency_template_id
+                        }
+                        className="rounded-2xl border border-slate-800 bg-slate-900 p-5"
+                      >
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-medium ${verificationStatusClasses(
+                                  item.status
+                                )}`}
+                              >
+                                {item.status}
+                              </span>
+
+                              {item.competency_is_critical && (
+                                <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300">
+                                  Critical
+                                </span>
+                              )}
+
+                              <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-medium text-cyan-300">
+                                Latest
+                              </span>
+                            </div>
+
+                            <h4 className="mt-3 text-lg font-semibold">
+                              {item.competency_name}
+                            </h4>
+
+                            {item.competency_category && (
+                              <p className="mt-1 text-sm text-slate-500">
+                                {item.competency_category}
+                              </p>
                             )}
-                          </span>
-                        </p>
 
-                        {item.verifier_email && (
-                          <p className="mt-1 text-xs text-slate-500">
-                            {
-                              item.verifier_email
-                            }
-                          </p>
-                        )}
-
-                        {item.notes && (
-                          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Verification
-                              Notes
+                            <p className="mt-3 text-sm text-slate-400">
+                              Verified by{" "}
+                              <span className="font-medium text-slate-300">
+                                {verifierName(item)}
+                              </span>
                             </p>
 
-                            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">
-                              {item.notes}
+                            {item.notes && (
+                              <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">
+                                {item.notes}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 sm:text-right">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
+                              Current Level
+                            </p>
+
+                            <p className="mt-1 text-2xl font-semibold">
+                              Level {item.rating_level}
+                            </p>
+
+                            <p className="mt-1 max-w-[180px] text-xs text-slate-400">
+                              {proficiencyLabel(
+                                item.rating_level
+                              )}
+                            </p>
+
+                            <p className="mt-3 text-xs text-slate-500">
+                              {formatDate(
+                                item.verified_at ??
+                                  item.created_at
+                              )}
                             </p>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="grid min-w-[250px] grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Rating
-                          </p>
-
-                          <p className="mt-1 text-2xl font-semibold">
-                            Level{" "}
-                            {
-                              item.rating_level
-                            }
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {proficiencyLabel(
-                              item.rating_level
-                            )}
-                          </p>
                         </div>
+                      </article>
+                    )
+                  )}
+                </div>
+              </div>
 
-                        <div className="rounded-xl bg-slate-950/50 p-4">
-                          <p className="text-xs text-slate-500">
-                            Verified
-                          </p>
 
-                          <p className="mt-1 text-sm font-medium">
-                            {formatDate(
-                              item.verified_at ??
-                                item.created_at
-                            )}
-                          </p>
-                        </div>
-                      </div>
+              {/* Full immutable audit trail */}
+
+              <details className="rounded-2xl border border-slate-800 bg-slate-900">
+                <summary className="cursor-pointer list-none p-5 sm:p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold">
+                        Full Verification Audit History
+                      </h3>
+
+                      <p className="mt-1 text-sm text-slate-400">
+                        All {history.length} immutable verification events, including prior and superseded records.
+                      </p>
                     </div>
-                  </article>
-                )
-              )}
+
+                    <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                      {history.length} Events
+                    </span>
+                  </div>
+                </summary>
+
+                <div className="border-t border-slate-800 p-5 sm:p-6">
+                  <div className="space-y-3">
+                    {history.map((item) => {
+                      const latestItem =
+                        latestVerificationByCompetency.find(
+                          (latest) =>
+                            latest.verification_id ===
+                            item.verification_id
+                        );
+
+                      return (
+                        <article
+                          key={item.verification_id}
+                          className={`rounded-xl border p-4 ${
+                            latestItem
+                              ? "border-slate-700 bg-slate-950/60"
+                              : "border-slate-800 bg-slate-950/30"
+                          }`}
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${verificationStatusClasses(
+                                    item.status
+                                  )}`}
+                                >
+                                  {item.status}
+                                </span>
+
+                                {latestItem ? (
+                                  <span className="rounded-full bg-cyan-500/15 px-2.5 py-1 text-xs font-medium text-cyan-300">
+                                    Current
+                                  </span>
+                                ) : (
+                                  <span className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-400">
+                                    Historical
+                                  </span>
+                                )}
+                              </div>
+
+                              <h4 className="mt-2 font-semibold">
+                                {item.competency_name}
+                              </h4>
+
+                              <p className="mt-1 text-sm text-slate-400">
+                                Level {item.rating_level}
+                                {" · "}
+                                {proficiencyLabel(
+                                  item.rating_level
+                                )}
+                              </p>
+
+                              <p className="mt-2 text-xs text-slate-500">
+                                Verified by {verifierName(item)}
+                                {" · "}
+                                {formatDate(
+                                  item.verified_at ??
+                                    item.created_at
+                                )}
+                              </p>
+
+                              {item.notes && (
+                                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-500">
+                                  {item.notes}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </details>
             </div>
           )}
         </section>
