@@ -512,10 +512,7 @@ export default function SystemTestingPage() {
           plan.action_type ===
             "REVERIFICATION_REQUIRED";
 
-        if (
-          !isPracticalPlan ||
-          plan.resolution_status !== "resolved"
-        ) {
+        if (!isPracticalPlan) {
           return false;
         }
 
@@ -525,31 +522,80 @@ export default function SystemTestingPage() {
               row.development_plan_id === plan.id
           );
 
-        if (!evidence) {
-          return true;
-        }
-
+        /*
+         * Resolved practical plans must be backed by
+         * qualifying immutable verification evidence.
+         */
         if (
-          evidence.verification_satisfied !== true ||
-          evidence.verified_at === null ||
-          plan.resolved_at === null ||
-          plan.development_completed_at === null
+          plan.resolution_status === "resolved"
         ) {
-          return true;
+          if (!evidence) {
+            return true;
+          }
+
+          if (
+            evidence.verification_satisfied !== true ||
+            evidence.verified_at === null ||
+            evidence.resolved_at === null ||
+            plan.resolved_at === null ||
+            plan.development_completed_at === null
+          ) {
+            return true;
+          }
+
+          if (
+            evidence.verified_at !==
+              plan.resolved_at ||
+            evidence.resolved_at !==
+              plan.resolved_at
+          ) {
+            return true;
+          }
+
+          if (
+            new Date(
+              evidence.verified_at
+            ).getTime() <
+            new Date(
+              plan.development_completed_at
+            ).getTime()
+          ) {
+            return true;
+          }
+
+          if (
+            evidence.evidence_required_since &&
+            new Date(
+              evidence.verified_at
+            ).getTime() <
+              new Date(
+                evidence.evidence_required_since
+              ).getTime()
+          ) {
+            return true;
+          }
+
+          return false;
         }
 
+        /*
+         * A plan still awaiting practical evidence
+         * must not already contain qualifying evidence.
+         * If qualifying evidence exists, the resolver
+         * should have moved the plan to resolved.
+         */
         if (
-          evidence.verified_at !== plan.resolved_at
+          plan.resolution_status ===
+            "awaiting_verification" ||
+          plan.resolution_status ===
+            "awaiting_reverification"
         ) {
-          return true;
+          return (
+            evidence?.verification_satisfied === true
+          );
         }
 
-        return (
-          new Date(evidence.verified_at).getTime() <
-          new Date(
-            plan.development_completed_at
-          ).getTime()
-        );
+        return false;
       });
 
 
@@ -557,15 +603,15 @@ export default function SystemTestingPage() {
       id: "practical-resolution-evidence",
       name: "Practical Resolution Evidence Integrity",
       description:
-        "Resolved practical and reverification plans must be tied to qualifying verification evidence recorded after development completion.",
+        "Resolved practical and reverification plans must be tied to qualifying verification evidence recorded after development completion, while plans still awaiting evidence must not already contain satisfied qualifying evidence.",
       status:
         practicalEvidenceViolations.length === 0
           ? "pass"
           : "fail",
       detail:
         practicalEvidenceViolations.length === 0
-          ? "Resolved practical plans are bound to valid qualifying verification evidence."
-          : `${practicalEvidenceViolations.length} resolved practical or reverification plan(s) have invalid or mismatched resolution evidence.`,
+          ? "Practical lifecycle state and qualifying verification evidence are synchronized."
+          : `${practicalEvidenceViolations.length} practical or reverification plan(s) have mismatched lifecycle and verification evidence.`,
     });
 
     const brokenWaitingPlans =
@@ -955,6 +1001,19 @@ export default function SystemTestingPage() {
           ]
         );
 
+      const practicalResolution =
+        findLifecycleScenario(
+          [
+            "PRACTICAL_VERIFICATION_NEEDED",
+            "PRACTICAL_DEVELOPMENT_NEEDED",
+          ],
+          [
+            "awaiting_verification",
+            "resolved",
+          ]
+        );
+
+
       const reverification =
         findLifecycleScenario(
           [
@@ -1049,6 +1108,35 @@ export default function SystemTestingPage() {
 
           developmentPlanId:
             reassessment.developmentPlanId,
+        },
+
+        {
+          id:
+            "practical-verification-resolution",
+
+          name:
+            "Practical Verification → Resolution",
+
+          description:
+            "Development is complete, the plan waits for practical verification, a qualifying immutable verification is recorded, and the same plan resolves automatically.",
+
+          status:
+            practicalResolution.status,
+
+          detail:
+            practicalResolution.status ===
+            "covered"
+              ? "Awaiting verification → qualifying evidence → resolved lifecycle captured."
+              : practicalResolution.status ===
+                  "partial"
+                ? "Practical verification history exists, but the complete awaiting verification → resolved sequence has not been captured since history tracking began."
+                : "No successful practical verification resolution lifecycle has been captured since history tracking began.",
+
+          planTitle:
+            practicalResolution.planTitle,
+
+          developmentPlanId:
+            practicalResolution.developmentPlanId,
         },
 
         {
