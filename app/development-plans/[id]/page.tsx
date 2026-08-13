@@ -2361,7 +2361,7 @@ Next Required Action
                                 href={`/employees/${plan.employee_id}/practical-verification?competency=${encodeURIComponent(
                                   activity.master_competency_template_id
                                 )}&targetLevel=${activity.target_required_level_snapshot ?? ""}&plan=${plan.development_plan_id}`}
-                                className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20"
+                                className="rounded-lg border border-cyan-600 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
                               >
                                 {activity.target_status_snapshot ===
                                 "reverification_required"
