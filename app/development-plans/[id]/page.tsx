@@ -127,7 +127,12 @@ type ResolutionEvidence = {
 type PracticalEvidence = {
   development_plan_id: string;
   competency_name_snapshot: string | null;
+  action_type: string;
+  evidence_type: "practical_verification" | "reverification";
+  evidence_required_since: string | null;
+
   required_level: number | null;
+
   verification_id: string | null;
   verified_level: number | null;
   verification_status: string | null;
@@ -135,6 +140,17 @@ type PracticalEvidence = {
   verified_at: string | null;
   notes: string | null;
   verification_satisfied: boolean;
+
+  previous_verification_id: string | null;
+  previous_verified_level: number | null;
+  previous_verification_status: string | null;
+  previous_verified_at: string | null;
+
+  qualifying_verification_id: string | null;
+  qualifying_verified_level: number | null;
+  qualifying_verification_status: string | null;
+  qualifying_verified_at: string | null;
+
   resolution_status: string;
   resolved_at: string | null;
 };
@@ -492,6 +508,9 @@ async function loadPracticalEvidence() {
     .select(`
       development_plan_id,
       competency_name_snapshot,
+      action_type,
+      evidence_type,
+      evidence_required_since,
       required_level,
       verification_id,
       verified_level,
@@ -500,6 +519,14 @@ async function loadPracticalEvidence() {
       verified_at,
       notes,
       verification_satisfied,
+      previous_verification_id,
+      previous_verified_level,
+      previous_verification_status,
+      previous_verified_at,
+      qualifying_verification_id,
+      qualifying_verified_level,
+      qualifying_verification_status,
+      qualifying_verified_at,
       resolution_status,
       resolved_at
     `)
@@ -1595,12 +1622,15 @@ plan.activities_total === 0
         </p>
 
         <h2 className="mt-2 text-xl font-semibold">
-          Practical Verification
+          {practicalEvidence.evidence_type === "reverification"
+            ? "Practical Reverification"
+            : "Practical Competency Verification"}
         </h2>
 
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-          This evidence shows the practical verification used to determine
-          whether the competency requirement has been satisfied.
+          {practicalEvidence.evidence_type === "reverification"
+            ? "This evidence shows the practical verification that satisfied the reverification requirement for this competency."
+            : "This evidence shows the practical verification used to determine whether the competency requirement was satisfied."}
         </p>
       </div>
 
@@ -1614,21 +1644,29 @@ plan.activities_total === 0
     <div className="mt-7 grid gap-4 md:grid-cols-3">
       <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
         <p className="text-sm text-slate-500">
-          Required Level
+          {practicalEvidence.evidence_type === "reverification"
+            ? "Previous Verification"
+            : "Previous Practical Level"}
         </p>
 
         <p className="mt-2 text-4xl font-bold">
-          {practicalEvidence.required_level ?? "—"}
+          {practicalEvidence.previous_verified_level !== null
+            ? `Level ${practicalEvidence.previous_verified_level}`
+            : "None"}
         </p>
 
         <p className="mt-2 text-xs text-slate-500">
-          Minimum practical level required for this competency
+          {practicalEvidence.previous_verified_at
+            ? `Recorded ${formatDateTime(practicalEvidence.previous_verified_at)}`
+            : "No prior practical verification in the employee record"}
         </p>
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
         <p className="text-sm text-slate-500">
-          Verified Level
+          {practicalEvidence.evidence_type === "reverification"
+            ? "New Verification"
+            : "Verified Level"}
         </p>
 
         <p
@@ -1638,27 +1676,31 @@ plan.activities_total === 0
               : "text-white"
           }`}
         >
-          {practicalEvidence.verified_level ?? "Pending"}
+          {practicalEvidence.verified_level !== null
+            ? `Level ${practicalEvidence.verified_level}`
+            : "Pending"}
         </p>
 
         <p className="mt-2 text-xs text-slate-500">
-          Recorded practical competency rating
+          {practicalEvidence.verified_at
+            ? `Verified ${formatDateTime(practicalEvidence.verified_at)}`
+            : "Awaiting qualifying practical verification"}
         </p>
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-5">
         <p className="text-sm text-slate-500">
-          Verification Status
+          Required Level
         </p>
 
-        <p className="mt-2 text-2xl font-bold capitalize">
-          {practicalEvidence.verification_status
-            ? practicalEvidence.verification_status.replaceAll("_", " ")
-            : "Pending"}
+        <p className="mt-2 text-4xl font-bold">
+          {practicalEvidence.required_level !== null
+            ? `Level ${practicalEvidence.required_level}`
+            : "—"}
         </p>
 
         <p className="mt-2 text-xs text-slate-500">
-          {practicalEvidence.competency_name_snapshot || "Practical competency"}
+          Minimum demonstrated practical level required to satisfy this plan
         </p>
       </div>
     </div>
@@ -1668,12 +1710,24 @@ plan.activities_total === 0
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-semibold text-emerald-300">
-              ✓ Practical requirement satisfied
+              ✓{" "}
+              {practicalEvidence.evidence_type === "reverification"
+                ? "Reverification requirement satisfied"
+                : "Practical requirement satisfied"}
             </p>
 
             <p className="mt-1 text-sm text-emerald-200/70">
-              The verified practical level meets or exceeds the required level.
+              {practicalEvidence.verified_level !== null &&
+              practicalEvidence.required_level !== null
+                ? `Demonstrated Level ${practicalEvidence.verified_level} against required Level ${practicalEvidence.required_level}.`
+                : "The practical verification meets the competency requirement."}
             </p>
+
+            {practicalEvidence.notes && (
+              <p className="mt-2 text-sm text-slate-400">
+                Verification note: {practicalEvidence.notes}
+              </p>
+            )}
           </div>
 
           <div className="text-sm text-slate-400 sm:text-right">
@@ -1695,7 +1749,7 @@ plan.activities_total === 0
   </section>
 )}
 
-        <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
+<section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
