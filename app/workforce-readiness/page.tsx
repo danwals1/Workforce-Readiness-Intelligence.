@@ -821,7 +821,7 @@ export default function WorkforceReadinessPage() {
                               key={
                                 row.employee_id
                               }
-                              className="border-b border-slate-800/70 transition hover:bg-slate-950/50"
+                              className="border-b border-slate-800/70"
                             >
                               <td className="px-6 py-5">
                                 <Link

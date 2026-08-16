@@ -9,12 +9,14 @@ import {
   listCurrentRoleTemplates,
   listIndustries,
   listMasterCompetencyAssessmentCoverage,
+  listMasterCompetencyAssessmentLevelCoverage,
   type Assessment,
   type AssessmentType,
   type Industry,
   type MasterCompetencyTemplate,
   type MasterRoleTemplate,
   type MasterCompetencyAssessmentCoverage,
+  type MasterCompetencyAssessmentLevelCoverage,
 } from "@/lib/masterLibrary";
 
 const TYPE_LABELS: Record<AssessmentType, string> = {
@@ -30,6 +32,8 @@ export default function AssessmentsPage() {
   const [competencies, setCompetencies] = useState<MasterCompetencyTemplate[]>([]);
   const [coverage, setCoverage] =
     useState<MasterCompetencyAssessmentCoverage[]>([]);
+  const [levelCoverage, setLevelCoverage] =
+    useState<MasterCompetencyAssessmentLevelCoverage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -45,18 +49,20 @@ export default function AssessmentsPage() {
   async function load() {
     setLoading(true);
     try {
-      const [a, i, r, c, coverageRows] = await Promise.all([
+      const [a, i, r, c, coverageRows, levelCoverageRows] = await Promise.all([
         listCurrentAssessments(),
         listIndustries(),
         listCurrentRoleTemplates(),
         listCurrentCompetencyTemplates(),
         listMasterCompetencyAssessmentCoverage(),
+        listMasterCompetencyAssessmentLevelCoverage(),
       ]);
       setAssessments(a);
       setIndustries(i);
       setRoles(r);
       setCompetencies(c);
       setCoverage(coverageRows);
+      setLevelCoverage(levelCoverageRows);
       if (!industryId && i.length > 0) setIndustryId(i[0].id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load assessments.");
@@ -130,6 +136,39 @@ export default function AssessmentsPage() {
       behavior: "smooth",
     });
   }
+
+  const levelCoverageByCompetency = levelCoverage.reduce<
+    Record<string, MasterCompetencyAssessmentLevelCoverage[]>
+  >((groups, row) => {
+    const competencyId = row.master_competency_template_id;
+
+    if (!groups[competencyId]) {
+      groups[competencyId] = [];
+    }
+
+    groups[competencyId].push(row);
+
+    return groups;
+  }, {});
+
+  const coverageByIndustryAndCategory = coverage.reduce<
+    Record<string, Record<string, MasterCompetencyAssessmentCoverage[]>>
+  >((industryGroups, row) => {
+    const industry = industryName(row.industry_id);
+    const category = row.competency_category ?? "Uncategorized";
+
+    if (!industryGroups[industry]) {
+      industryGroups[industry] = {};
+    }
+
+    if (!industryGroups[industry][category]) {
+      industryGroups[industry][category] = [];
+    }
+
+    industryGroups[industry][category].push(row);
+
+    return industryGroups;
+  }, {});
 
   const readyCount = coverage.filter(
     (row) => row.coverage_status === "ready"
@@ -342,106 +381,162 @@ export default function AssessmentsPage() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-800">
-            <div className="divide-y divide-slate-800">
-              {coverage.map((row) => (
-                <div
-                  key={row.master_competency_template_id}
-                  className="flex flex-col gap-4 bg-slate-950/40 p-4 lg:flex-row lg:items-center lg:justify-between"
+          <div className="space-y-6">
+            {Object.entries(coverageByIndustryAndCategory)
+              .sort(([industryA], [industryB]) =>
+                industryA.localeCompare(industryB)
+              )
+              .map(([industry, categoryGroups]) => (
+                <details
+                  key={industry}
+                  className="overflow-hidden rounded-xl border border-slate-800"
                 >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">
-                        {row.competency_name}
-                      </p>
+                  <summary className="flex cursor-pointer list-none items-center justify-between border-b-2 border-slate-400 bg-slate-200 px-5 py-4">
+                    <h4 className="text-lg font-bold uppercase tracking-wide !text-slate-950">
+                      {industry}
+                    </h4>
 
-                      <span
-                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${coverageClasses(
-                          row.coverage_status
-                        )}`}
-                      >
-                        {coverageLabel(
-                          row.coverage_status
-                        )}
-                      </span>
-                    </div>
+                    <span className="text-sm font-semibold !text-slate-700">
+                      Open / Close
+                    </span>
+                  </summary>
 
-                    <p className="mt-1 text-sm text-slate-500">
-                      {row.competency_category ?? "Uncategorized"}
-                      {" · "}
-                      {row.question_count} Master-backed question
-                      {row.question_count === 1 ? "" : "s"}
-                      {" · "}
-                      {row.answer_key_count} answer key
-                      {row.answer_key_count === 1 ? "" : "s"}
-                    </p>
+                  <div className="divide-y divide-slate-800">
+                    {Object.entries(categoryGroups)
+                      .sort(([categoryA], [categoryB]) =>
+                        categoryA.localeCompare(categoryB)
+                      )
+                      .map(([category, rows]) => (
+                        <div key={category}>
+                          <div className="border-y border-slate-300 bg-slate-100 px-5 py-3">
+                            <p className="text-sm font-semibold uppercase tracking-wide !text-slate-900">
+                              {category}
+                            </p>
+                          </div>
 
-                    {row.assessment_name && (
-                      <p className="mt-1 text-sm text-slate-400">
-                        {row.assessment_name}
-                      </p>
+                          <div className="divide-y divide-slate-800">
+                            {[...rows]
+                              .sort((rowA, rowB) =>
+                                rowA.competency_name.localeCompare(
+                                  rowB.competency_name
+                                )
+                              )
+                              .map((row) => (
+                              <div
+                                key={row.master_competency_template_id}
+                                className="flex flex-col gap-4 bg-slate-950/40 p-4 lg:flex-row lg:items-center lg:justify-between"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-medium">
+                                      {row.competency_name}
+                                    </p>
+
+                                    <span
+                                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${coverageClasses(
+                                        row.coverage_status
+                                      )}`}
+                                    >
+                                      {coverageLabel(
+                                        row.coverage_status
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    {row.question_count} Master-backed question
+                                    {row.question_count === 1 ? "" : "s"}
+                                    {" · "}
+                                    {row.answer_key_count} answer key
+                                    {row.answer_key_count === 1 ? "" : "s"}
+                                  </p>
+
+                                  {levelCoverageByCompetency[
+                                    row.master_competency_template_id
+                                  ]?.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                      {levelCoverageByCompetency[
+                                        row.master_competency_template_id
+                                      ].map((levelRow) => (
+                                        <div
+                                          key={levelRow.assessment_id}
+                                          className="flex flex-wrap items-center gap-2 text-sm"
+                                        >
+                                          <span className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-300">
+                                            {levelRow.target_level
+                                              ? `L${levelRow.target_level}`
+                                              : "No Level"}
+                                          </span>
+
+                                          <Link
+                                            href={`/admin/library/assessments/${levelRow.assessment_family_id}`}
+                                            className="text-cyan-300 hover:text-cyan-200"
+                                          >
+                                            {levelRow.assessment_name}
+                                          </Link>
+
+                                          <span className="text-slate-500">
+                                            {levelRow.question_count} questions
+                                            {" · "}
+                                            {levelRow.answer_key_count} answer keys
+                                          </span>
+
+                                          <span
+                                            className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                                              levelRow.assessment_ready
+                                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                                : "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                                            }`}
+                                          >
+                                            {levelRow.assessment_ready
+                                              ? "Ready"
+                                              : levelRow.coverage_status
+                                                  .replaceAll("_", " ")
+                                                  .replace(/\b\w/g, (char) =>
+                                                    char.toUpperCase()
+                                                  )}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="shrink-0">
+                                  {!row.assessment_family_id && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        beginCompetencyAssessment(row)
+                                      }
+                                      className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                                    >
+                                      Create Assessment
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
+                </details>
+              )
+            )}
 
-                  <div className="shrink-0">
-                    {row.assessment_family_id ? (
-                      <Link
-                        href={`/admin/library/assessments/${row.assessment_family_id}`}
-                        className="inline-flex rounded-lg border border-cyan-600 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-                      >
-                        {row.coverage_status === "ready"
-                          ? "Open Assessment"
-                          : "Complete Assessment"}
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          beginCompetencyAssessment(row)
-                        }
-                        className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
-                      >
-                        Create Assessment
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {coverage.length === 0 && (
-                <div className="p-5 text-sm text-slate-500">
-                  No competency coverage data is available.
-                </div>
-              )}
-            </div>
+            {coverage.length === 0 && (
+              <div className="rounded-xl border border-slate-800 p-5 text-sm text-slate-500">
+                No competency coverage data is available.
+              </div>
+            )}
           </div>
         </section>
       )}
 
-      {loading ? (
+      {loading && (
         <p className="text-slate-400">Loading…</p>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {assessments.map((a) => (
-            <Link
-              key={a.id}
-              href={`/admin/library/assessments/${a.family_id}`}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-            >
-              <p className="text-sm text-slate-400">{industryName(a.industry_id)}</p>
-              <h3 className="mt-1 text-xl font-semibold">{a.name}</h3>
-              <p className="mt-2 text-sm text-slate-400">
-                {TYPE_LABELS[a.type]}
-                {roleName(a.master_role_template_id) ? ` · ${roleName(a.master_role_template_id)}` : ""}
-                {competencyName(a.master_competency_template_id) ? ` · ${competencyName(a.master_competency_template_id)}` : ""}
-              </p>
-              <span className="mt-4 inline-block rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-                v{a.version}
-              </span>
-            </Link>
-          ))}
-          {assessments.length === 0 && <p className="text-slate-500">No assessment templates yet.</p>}
-        </div>
       )}
     </div>
   );

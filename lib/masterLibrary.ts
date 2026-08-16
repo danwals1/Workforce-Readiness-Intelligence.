@@ -69,6 +69,7 @@ export type Assessment = {
   master_role_template_id: string | null;
   master_target_role_template_id: string | null;
   master_competency_template_id: string | null;
+  target_level: number | null;
 };
 
 export type AssessmentQuestionType =
@@ -118,6 +119,41 @@ export type MasterCompetencyAssessmentCoverage = {
     | "needs_questions"
     | "needs_answer_keys"
     | "needs_assessment";
+
+  assessment_ready: boolean;
+};
+
+export type MasterCompetencyAssessmentLevelCoverage = {
+  master_competency_template_id: string;
+  industry_id: string;
+  competency_name: string;
+  competency_category: string | null;
+
+  assessment_id: string;
+  assessment_family_id: string;
+  assessment_name: string;
+  target_level: number | null;
+
+  question_count: number;
+  answer_key_count: number;
+
+  foundational_count: number;
+  application_count: number;
+  scenario_count: number;
+
+  required_question_count: number | null;
+  required_foundational_count: number | null;
+  required_application_count: number | null;
+  required_scenario_count: number | null;
+
+  coverage_status:
+    | "ready"
+    | "needs_target_level"
+    | "needs_standard"
+    | "needs_questions"
+    | "needs_answer_keys"
+    | "needs_question_count"
+    | "needs_difficulty_mix";
 
   assessment_ready: boolean;
 };
@@ -330,6 +366,18 @@ export async function listMasterCompetencyAssessmentCoverage(): Promise<
   if (error) throw error;
 
   return (data ?? []) as MasterCompetencyAssessmentCoverage[];
+}
+
+export async function listMasterCompetencyAssessmentLevelCoverage(): Promise<
+  MasterCompetencyAssessmentLevelCoverage[]
+> {
+  const { data, error } = await supabase.rpc(
+    "wri_master_competency_assessment_level_coverage"
+  );
+
+  if (error) throw error;
+
+  return (data ?? []) as MasterCompetencyAssessmentLevelCoverage[];
 }
 
 export async function getAssessmentFamily(familyId: string): Promise<Assessment[]> {
