@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Supabase local CLI state
+supabase/.temp/
+
+# Supabase local CLI state
+supabase/.temp/
