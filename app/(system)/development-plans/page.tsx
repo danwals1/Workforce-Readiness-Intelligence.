@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type DevelopmentPlanResolution = {
@@ -115,6 +114,49 @@ type NewPlanDraft = {
   managerNotes: string;
 };
 
+function isOpenPlan(
+  plan: DevelopmentPlanResolution
+) {
+  return ![
+    "resolved",
+    "cancelled",
+  ].includes(plan.resolution_status);
+}
+
+function isDueSoon(
+  plan: DevelopmentPlanResolution
+) {
+  if (
+    !plan.due_date ||
+    plan.overdue ||
+    !isOpenPlan(plan)
+  ) {
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dueDate = new Date(
+    `${plan.due_date}T12:00:00`
+  );
+  dueDate.setHours(0, 0, 0, 0);
+
+  const differenceMs =
+    dueDate.getTime() - today.getTime();
+
+  const differenceDays =
+    Math.round(
+      differenceMs /
+        (1000 * 60 * 60 * 24)
+    );
+
+  return (
+    differenceDays >= 0 &&
+    differenceDays <= 7
+  );
+}
+
 export default function DevelopmentPlansCenterPage() {
   const router = useRouter();
 
@@ -172,132 +214,6 @@ export default function DevelopmentPlansCenterPage() {
       managerNotes: "",
     });
 
-  async function loadPlans() {
-    const {
-      data,
-      error,
-    } = await supabase.rpc(
-      "wri_list_development_plan_resolutions",
-      {
-        p_employee_id: null,
-        p_resolution_status: null,
-      }
-    );
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    const planRows =
-      (data ?? []) as DevelopmentPlanResolution[];
-
-    setPlans(planRows);
-
-    await loadPlanOwnerOptions(planRows);
-  }
-
-  async function loadEmployees() {
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("employees")
-      .select(`
-        id,
-        first_name,
-        last_name,
-        employee_number
-      `)
-      .order("last_name", { ascending: true })
-      .order("first_name", { ascending: true });
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    const rows =
-      (data ?? []) as EmployeeOption[];
-
-    setEmployees(rows);
-
-    setDraft((current) => ({
-      ...current,
-      employeeId:
-        current.employeeId ||
-        rows[0]?.id ||
-        "",
-    }));
-  }
-
-  async function loadPlanOwnerOptions(
-    planRows: DevelopmentPlanResolution[]
-  ) {
-    const employeeIds = Array.from(
-      new Set(
-        planRows
-          .filter((plan) => plan.owner_user_id)
-          .map((plan) => plan.employee_id)
-      )
-    );
-
-    if (employeeIds.length === 0) {
-      setPlanOwnerOptions([]);
-      return;
-    }
-
-    const results = await Promise.all(
-      employeeIds.map(async (employeeId) => {
-        const { data, error } =
-          await supabase.rpc(
-            "wri_list_development_plan_owners",
-            {
-              p_employee_id: employeeId,
-            }
-          );
-
-        if (error) {
-          console.error(
-            "Unable to load plan owners:",
-            error
-          );
-          return [];
-        }
-
-        return (
-          (data ?? []) as PlanOwnerOption[]
-        );
-      })
-    );
-
-    const uniqueOwners =
-      new Map<
-        string,
-        DevelopmentPlanOwnerFilterOption
-      >();
-
-    results.flat().forEach((owner) => {
-      if (!uniqueOwners.has(owner.user_id)) {
-        uniqueOwners.set(owner.user_id, {
-          user_id: owner.user_id,
-          first_name: owner.first_name,
-          last_name: owner.last_name,
-          role: owner.role,
-        });
-      }
-    });
-
-    setPlanOwnerOptions(
-      Array.from(uniqueOwners.values()).sort(
-        (a, b) =>
-          `${a.last_name} ${a.first_name}`.localeCompare(
-            `${b.last_name} ${b.first_name}`
-          )
-      )
-    );
-  }
-
   async function loadOwners(
     employeeId: string
   ) {
@@ -347,44 +263,178 @@ export default function DevelopmentPlansCenterPage() {
   }
 
   useEffect(() => {
-    async function loadPage() {
-      const {
-        data: sessionData,
-        error: sessionError,
-      } = await supabase.auth.getSession();
+    queueMicrotask(() => {
+      void (async () => {
+        const {
+          data: sessionData,
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-      if (sessionError) {
-        setMessage(sessionError.message);
-        return;
-      }
+        if (sessionError) {
+          setMessage(sessionError.message);
+          return;
+        }
 
-      if (!sessionData.session) {
-        router.push("/");
-        return;
-      }
+        if (!sessionData.session) {
+          router.push("/");
+          return;
+        }
 
-      setCurrentUserId(
-        sessionData.session.user.id
-      );
+        setCurrentUserId(
+          sessionData.session.user.id
+        );
 
-      await Promise.all([
-        loadPlans(),
-        loadEmployees(),
-      ]);
+        const [
+          planResult,
+          employeeResult,
+        ] = await Promise.all([
+          supabase.rpc(
+            "wri_list_development_plan_resolutions",
+            {
+              p_employee_id: null,
+              p_resolution_status: null,
+            }
+          ),
+          supabase
+            .from("employees")
+            .select(`
+              id,
+              first_name,
+              last_name,
+              employee_number
+            `)
+            .order("last_name", { ascending: true })
+            .order("first_name", { ascending: true }),
+        ]);
 
-      setMessage("");
-    }
+        if (planResult.error) {
+          setMessage(planResult.error.message);
+          return;
+        }
 
-    loadPage();
+        if (employeeResult.error) {
+          setMessage(employeeResult.error.message);
+          return;
+        }
+
+        const planRows =
+          (planResult.data ?? []) as DevelopmentPlanResolution[];
+
+        const employeeRows =
+          (employeeResult.data ?? []) as EmployeeOption[];
+
+        setPlans(planRows);
+        setEmployees(employeeRows);
+
+        setDraft((current) => ({
+          ...current,
+          employeeId:
+            current.employeeId ||
+            employeeRows[0]?.id ||
+            "",
+        }));
+
+        const employeeIds = Array.from(
+          new Set(
+            planRows
+              .filter(
+                (plan) =>
+                  plan.owner_user_id
+              )
+              .map(
+                (plan) =>
+                  plan.employee_id
+              )
+          )
+        );
+
+        if (employeeIds.length === 0) {
+          setPlanOwnerOptions([]);
+        } else {
+          const ownerResults =
+            await Promise.all(
+              employeeIds.map(
+                async (employeeId) => {
+                  const {
+                    data,
+                    error,
+                  } = await supabase.rpc(
+                    "wri_list_development_plan_owners",
+                    {
+                      p_employee_id:
+                        employeeId,
+                    }
+                  );
+
+                  if (error) {
+                    console.error(
+                      "Unable to load plan owners:",
+                      error
+                    );
+                    return [];
+                  }
+
+                  return (
+                    (data ?? []) as PlanOwnerOption[]
+                  );
+                }
+              )
+            );
+
+          const uniqueOwners =
+            new Map<
+              string,
+              DevelopmentPlanOwnerFilterOption
+            >();
+
+          ownerResults
+            .flat()
+            .forEach((owner) => {
+              if (
+                !uniqueOwners.has(
+                  owner.user_id
+                )
+              ) {
+                uniqueOwners.set(
+                  owner.user_id,
+                  {
+                    user_id:
+                      owner.user_id,
+                    first_name:
+                      owner.first_name,
+                    last_name:
+                      owner.last_name,
+                    role: owner.role,
+                  }
+                );
+              }
+            });
+
+          setPlanOwnerOptions(
+            Array.from(
+              uniqueOwners.values()
+            ).sort((a, b) =>
+              `${a.last_name} ${a.first_name}`.localeCompare(
+                `${b.last_name} ${b.first_name}`
+              )
+            )
+          );
+        }
+
+        setMessage("");
+      })();
+    });
   }, [router]);
 
   useEffect(() => {
-    if (!draft.employeeId) {
-      setOwners([]);
-      return;
-    }
+    queueMicrotask(() => {
+      if (!draft.employeeId) {
+        setOwners([]);
+        return;
+      }
 
-    loadOwners(draft.employeeId);
+      void loadOwners(draft.employeeId);
+    });
   }, [draft.employeeId]);
 
   async function createPlan() {
@@ -447,49 +497,6 @@ export default function DevelopmentPlansCenterPage() {
 
     router.push(
       `/development-plans/${data}`
-    );
-  }
-
-  function isOpenPlan(
-    plan: DevelopmentPlanResolution
-  ) {
-    return ![
-      "resolved",
-      "cancelled",
-    ].includes(plan.resolution_status);
-  }
-
-  function isDueSoon(
-    plan: DevelopmentPlanResolution
-  ) {
-    if (
-      !plan.due_date ||
-      plan.overdue ||
-      !isOpenPlan(plan)
-    ) {
-      return false;
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const dueDate = new Date(
-      `${plan.due_date}T12:00:00`
-    );
-    dueDate.setHours(0, 0, 0, 0);
-
-    const differenceMs =
-      dueDate.getTime() - today.getTime();
-
-    const differenceDays =
-      Math.round(
-        differenceMs /
-          (1000 * 60 * 60 * 24)
-      );
-
-    return (
-      differenceDays >= 0 &&
-      differenceDays <= 7
     );
   }
 
@@ -806,17 +813,26 @@ const counts = useMemo(() => {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl">
-        <SystemHeader
-          title="Development Plans"
-          subtitle="Track employee development work from readiness gap through final resolution."
-          showHome={true}
-          showSignOut={true}
-        >
+    <div className="mx-auto max-w-7xl">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Development Plans
+          </p>
+
+          <h2 className="mt-2 text-3xl font-semibold">
+            Development Plan Center
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">
+            Track employee development work from readiness gap through final resolution.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
           <Link
             href="/readiness-actions"
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
             Readiness Actions
           </Link>
@@ -834,7 +850,8 @@ const counts = useMemo(() => {
               ? "Cancel"
               : "Create Development Plan"}
           </button>
-        </SystemHeader>
+        </div>
+      </header>
 
         {message && (
           <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
@@ -1701,8 +1718,7 @@ const counts = useMemo(() => {
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </div>
   );
 }
 

@@ -12,6 +12,7 @@ type SystemLayoutProps = {
 type UserClientRole = {
   role: string;
   client_id: string | null;
+  status: string;
 };
 
 type VerificationAssignment = {
@@ -105,7 +106,8 @@ export default function SystemLayout({
         .from("user_client_roles")
         .select(`
           role,
-          client_id
+          client_id,
+          status
         `)
         .eq("user_id", userId);
 
@@ -119,27 +121,27 @@ export default function SystemLayout({
       const typedRoles =
         (roles ?? []) as UserClientRole[];
 
-      setIsIntegrateAdmin(
-        typedRoles.some(
+      const activeRoles =
+        typedRoles.filter(
           (role) =>
-            role.role ===
-              "INTEGRATEU_ADMIN" ||
-            role.role ===
-              "INTEGRATEU_SUPER_ADMIN"
-        )
-      );
+            role.status.toLowerCase() ===
+            "active"
+        );
 
       const integrateAdmin =
-        typedRoles.some(
+        activeRoles.some(
           (role) =>
-            role.role ===
-              "INTEGRATEU_ADMIN" ||
-            role.role ===
-              "INTEGRATEU_SUPER_ADMIN"
+            (
+              role.role ===
+                "INTEGRATEU_ADMIN" ||
+              role.role ===
+                "INTEGRATEU_SUPER_ADMIN"
+            ) &&
+            role.client_id === null
         );
 
       const clientAdmin =
-        typedRoles.some(
+        activeRoles.some(
           (role) =>
             role.role ===
               "CLIENT_ADMIN" &&

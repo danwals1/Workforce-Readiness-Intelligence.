@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import SystemHeader from "@/components/SystemHeader";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -383,24 +382,31 @@ export default function ManageVerifiersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-6xl">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Verifier Management
+          </p>
 
-        <SystemHeader
-          title="Manage Practical Verifiers"
-          subtitle="Give supervisors, trainers, lead technicians, or instructors practical-verification authority without granting full company-admin access."
-          showHome={true}
-          showSignOut={true}
-        >
-          {isIntegrateAdmin && (
-            <Link
-              href="/admin/library"
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              Master Library
-            </Link>
-          )}
-        </SystemHeader>
+          <h2 className="mt-2 text-3xl font-semibold">
+            Manage Practical Verifiers
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">
+            Give supervisors, trainers, lead technicians, or instructors practical-verification authority without granting full company-admin access.
+          </p>
+        </div>
+
+        {isIntegrateAdmin && (
+          <Link
+            href="/admin/library"
+            className="inline-flex items-center justify-center rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
+          >
+            Master Library
+          </Link>
+        )}
+      </header>
 
         {message && (
           <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">
@@ -786,7 +792,6 @@ export default function ManageVerifiersPage() {
             </div>
           </section>
         )}
-      </div>
-    </main>
+    </div>
   );
 }

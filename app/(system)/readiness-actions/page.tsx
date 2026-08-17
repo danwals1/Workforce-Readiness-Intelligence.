@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type ReadinessAction = {
@@ -238,23 +237,8 @@ export default function ReadinessActionsPage() {
     loadActions();
   }, [router]);
 
-  async function logout() {
-    await supabase.auth.signOut();
-    router.push("/");
-  }
-
   const criticalCount = useMemo(
     () => actions.filter((item) => item.priority === 1).length,
-    [actions]
-  );
-
-  const highCount = useMemo(
-    () => actions.filter((item) => item.priority === 2).length,
-    [actions]
-  );
-
-  const mediumCount = useMemo(
-    () => actions.filter((item) => item.priority === 3).length,
     [actions]
   );
 
@@ -569,21 +553,29 @@ export default function ReadinessActionsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl">
-        <SystemHeader
-          title="Readiness Action Center"
-          subtitle="Prioritized workforce readiness issues that need management, development, verification, or reverification action."
-          showHome={true}
-          showSignOut={true}
+    <div className="mx-auto max-w-7xl">
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Readiness Actions
+          </p>
+
+          <h2 className="mt-2 text-3xl font-semibold">
+            Readiness Action Center
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm text-slate-400">
+            Prioritized workforce readiness issues that need management, development, verification, or reverification action.
+          </p>
+        </div>
+
+        <Link
+          href="/verify"
+          className="inline-flex items-center justify-center rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
         >
-          <Link
-            href="/verify"
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            Verify Employees
-          </Link>
-        </SystemHeader>
+          Verify Employees
+        </Link>
+      </header>
 
         {message && (
           <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
@@ -1107,8 +1099,7 @@ export default function ReadinessActionsPage() {
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </div>
   );
 }
 

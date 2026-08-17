@@ -45,12 +45,6 @@ type WorkforceReadinessRow = {
   awaiting_evidence_count: number;
 };
 
-type VerificationAssignment = {
-  employee_id: string;
-};
-
-
-
 type DevelopmentPlanLifecycleSummary = {
   development_plan_id: string;
   employee_id: string;
@@ -72,10 +66,6 @@ export default function DashboardPage() {
   const [isClientAdmin, setIsClientAdmin] = useState(false);
   const [workforceReadiness, setWorkforceReadiness] =
     useState<WorkforceReadinessRow[]>([]);
-
-  const [verificationAssignments, setVerificationAssignments] = useState<
-    VerificationAssignment[]
-  >([]);
 
   const [developmentPlans, setDevelopmentPlans] =
     useState<DevelopmentPlanLifecycleSummary[]>([]);
@@ -172,24 +162,6 @@ export default function DashboardPage() {
         setDevelopmentPlans([]);
       }
 
-
-      const {
-        data: verifierData,
-        error: verifierError,
-      } = await supabase.rpc(
-        "wri_list_my_verification_employees"
-      );
-
-      if (verifierError) {
-        console.error(
-          "Unable to load verifier assignments:",
-          verifierError
-        );
-      } else {
-        setVerificationAssignments(
-          (verifierData ?? []) as VerificationAssignment[]
-        );
-      }
 
       if (integrateAdmin || clientAdmin) {
         const {
@@ -369,9 +341,6 @@ export default function DashboardPage() {
   const canManageOrganization =
     isIntegrateAdmin || isClientAdmin;
 
-  const canVerify =
-    verificationAssignments.length > 0;
-
   const isIndividualUser =
     !canManageOrganization;
 
@@ -475,12 +444,12 @@ export default function DashboardPage() {
           </p>
 
           <h2 className="mt-2 text-3xl font-semibold">
-            Training & Readiness
+            Workforce Readiness Overview
           </h2>
 
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
-            Your central view of workforce readiness, assessments,
-            development activity, and practical verification.
+            Current workforce readiness, open gaps, development activity,
+            and evidence requiring attention.
           </p>
         </header>
 
@@ -488,260 +457,6 @@ export default function DashboardPage() {
           <div className="mb-8 rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
             {message}
           </div>
-        )}
-
-        <section>
-          <div className="mb-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              System Home
-            </p>
-
-            <h2 className="mt-2 text-2xl font-semibold">
-              Training & Readiness
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-400">
-              Access the core training and workforce-readiness
-              tools available to you.
-            </p>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {isIndividualUser &&
-              primaryEmployee && (
-                <Link
-                  href={`/employees/${primaryEmployee.id}`}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-                >
-                  <p className="text-sm font-medium text-cyan-400">
-                    My Readiness
-                  </p>
-
-                  <h3 className="mt-2 text-xl font-semibold">
-                    Readiness Profile
-                  </h3>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Review your readiness, competency gaps,
-                    development plans, and verification history.
-                  </p>
-
-                  <p className="mt-5 text-sm font-medium text-cyan-400">
-                    Open My Profile →
-                  </p>
-                </Link>
-              )}
-
-            {canManageOrganization && (
-              <Link
-                href="/workforce-readiness"
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-              >
-                <p className="text-sm font-medium text-cyan-400">
-                  Team Readiness
-                </p>
-
-                <h3 className="mt-2 text-xl font-semibold">
-                  Workforce Readiness
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Review employee readiness levels,
-                  competency progress, and workforce gaps.
-                </p>
-
-                <p className="mt-5 text-sm font-medium text-cyan-400">
-                  Open Workforce Readiness →
-                </p>
-              </Link>
-            )}
-
-            <Link
-              href="/assessments"
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-            >
-              <p className="text-sm font-medium text-cyan-400">
-                Assessments
-              </p>
-
-              <h3 className="mt-2 text-xl font-semibold">
-                Assessment Center
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Access role-based assessments, attempts,
-                and assessment results.
-              </p>
-
-              <p className="mt-5 text-sm font-medium text-cyan-400">
-                Open Assessments →
-              </p>
-            </Link>
-
-            {canManageOrganization && (
-              <Link
-                href="/readiness-actions"
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-              >
-                <p className="text-sm font-medium text-cyan-400">
-                  Readiness Actions
-                </p>
-
-                <h3 className="mt-2 text-xl font-semibold">
-                  Gap Resolution
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Review readiness gaps and launch the
-                  development, reassessment, or verification
-                  work needed to close them.
-                </p>
-
-                <p className="mt-5 text-sm font-medium text-cyan-400">
-                  Open Readiness Actions →
-                </p>
-              </Link>
-            )}
-
-            {canManageOrganization && (
-              <Link
-                href="/development-plans"
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-              >
-                <p className="text-sm font-medium text-cyan-400">
-                  Development Plans
-                </p>
-
-                <h3 className="mt-2 text-xl font-semibold">
-                  Development Center
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Track employee development work from
-                  readiness gap through final resolution.
-                </p>
-
-                <p className="mt-5 text-sm font-medium text-cyan-400">
-                  Open Development Plans →
-                </p>
-              </Link>
-            )}
-
-            {canVerify && (
-              <Link
-                href="/verify"
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-              >
-                <p className="text-sm font-medium text-cyan-400">
-                  Practical Verification
-                </p>
-
-                <h3 className="mt-2 text-xl font-semibold">
-                  Verification Workspace
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Review employees assigned to you and record
-                  practical competency verification.
-                </p>
-
-                <p className="mt-5 text-sm font-medium text-cyan-400">
-                  Open Verification →
-                </p>
-              </Link>
-            )}
-          </div>
-        </section>
-
-        {(isIntegrateAdmin ||
-          isClientAdmin) && (
-          <section className="mt-12">
-            <div className="mb-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Administration
-              </p>
-
-              <h2 className="mt-2 text-2xl font-semibold">
-                System Administration
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-400">
-                Manage the configuration and permissions
-                that support the RISE.
-              </p>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              <Link
-                href="/admin/verifiers"
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-              >
-                <p className="text-sm font-medium text-cyan-400">
-                  Verifier Management
-                </p>
-
-                <h3 className="mt-2 text-xl font-semibold">
-                  Practical Verifiers
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Assign and manage practical-verification
-                  access for your organization.
-                </p>
-
-                <p className="mt-5 text-sm font-medium text-cyan-400">
-                  Manage Verifiers →
-                </p>
-              </Link>
-
-              {isIntegrateAdmin && (
-                <Link
-                  href="/admin/library"
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-                >
-                  <p className="text-sm font-medium text-cyan-400">
-                    Master Library
-                  </p>
-
-                  <h3 className="mt-2 text-xl font-semibold">
-                    RISE Library
-                  </h3>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Manage industries, competencies, role
-                    templates, and assessment templates.
-                  </p>
-
-                  <p className="mt-5 text-sm font-medium text-cyan-400">
-                    Open Master Library →
-                  </p>
-                </Link>
-              )}
-{isIntegrateAdmin && (
-  <Link
-    href="/admin/testing"
-    className="rounded-2xl border border-slate-800 bg-slate-900 p-6 transition hover:border-cyan-400"
-  >
-    <p className="text-sm font-medium text-cyan-400">
-      System Testing
-    </p>
-
-    <h3 className="mt-2 text-xl font-semibold">
-      Testing Workspace
-    </h3>
-
-    <p className="mt-2 text-sm leading-6 text-slate-400">
-      Test assessment, readiness, development,
-      verification, and administration workflows.
-    </p>
-
-    <p className="mt-5 text-sm font-medium text-cyan-400">
-      Open System Testing →
-    </p>
-  </Link>
-)}
-            </div>
-          </section>
         )}
 
         {canManageOrganization && (

@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type Employee = {
@@ -412,24 +411,21 @@ searchParams.get("plan");
     );
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-
-    router.push("/");
-  }
-
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl">
+      <header className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Assessments
+        </p>
 
-        {/* Header */}
+        <h2 className="mt-2 text-3xl font-semibold">
+          Assessment Center
+        </h2>
 
-        <SystemHeader
-          title="Assessments"
-          subtitle="Measure your current knowledge and identify development opportunities."
-          showHome={true}
-          showSignOut={true}
-        />
+        <p className="mt-2 max-w-3xl text-sm text-slate-400">
+          Measure current knowledge and identify development opportunities.
+        </p>
+      </header>
 
         {/* Pending Reassessments */}
 
@@ -605,8 +601,7 @@ searchParams.get("plan");
               </div>
             </div>
           )}
-      </div>
-    </main>
+    </div>
   );
 }
 
@@ -614,13 +609,11 @@ export default function AssessmentsPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-          <div className="mx-auto max-w-6xl">
-            <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
-              Loading assessment...
-            </div>
+        <div className="mx-auto max-w-6xl">
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-slate-300">
+            Loading assessment...
           </div>
-        </main>
+        </div>
       }
     >
       <AssessmentsPageContent />

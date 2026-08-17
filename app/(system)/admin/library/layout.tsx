@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import SystemHeader from "@/components/SystemHeader";
 import { useIntegrateAdminGuard } from "@/lib/adminAuth";
 
 const TABS = [
@@ -23,48 +22,50 @@ export default function AdminLibraryLayout({
 
   if (status === "checking") {
     return (
-      <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-slate-300">
-            Checking access…
-          </div>
+      <div className="mx-auto max-w-7xl">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8 text-slate-300">
+          Checking access…
         </div>
-      </main>
+      </div>
     );
   }
 
   if (status === "denied") {
     return (
-      <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
-            <p className="text-slate-300">
-              This area is restricted to IntegrateU admins.
-            </p>
+      <div className="mx-auto max-w-7xl">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
+          <p className="text-slate-300">
+            This area is restricted to IntegrateU admins.
+          </p>
 
-            <Link
-              href="/dashboard"
-              className="mt-6 inline-block text-sm font-medium text-cyan-400 hover:text-cyan-300"
-            >
-              ← RISE Home
-            </Link>
-          </div>
+          <Link
+            href="/dashboard"
+            className="mt-6 inline-block text-sm font-medium text-cyan-400 hover:text-cyan-300"
+          >
+            ← RISE Home
+          </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl">
-        <SystemHeader
-          title="Master Library"
-          subtitle="Manage industries, role and competency templates, and versioned assessments."
-          showHome={true}
-          showSignOut={true}
-        />
+    <div className="mx-auto max-w-7xl">
+      <header className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Administration
+        </p>
 
-        <nav className="mb-8 flex flex-wrap gap-1 border-b border-slate-800 pb-px">
+        <h2 className="mt-2 text-3xl font-semibold">
+          Master Library
+        </h2>
+
+        <p className="mt-2 max-w-3xl text-sm text-slate-400">
+          Manage industries, role and competency templates, and versioned assessments.
+        </p>
+      </header>
+
+      <nav className="mb-8 flex flex-wrap gap-1 border-b border-slate-800 pb-px">
           {TABS.map((tab) => {
             const active = pathname === tab.href;
 
@@ -84,8 +85,7 @@ export default function AdminLibraryLayout({
           })}
         </nav>
 
-        {children}
-      </div>
-    </main>
+      {children}
+    </div>
   );
 }
