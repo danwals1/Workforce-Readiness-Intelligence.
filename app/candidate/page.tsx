@@ -103,6 +103,64 @@ function normalizeOptions(value: unknown): Option[] {
     );
 }
 
+function stableShuffle<T>(
+  items: T[],
+  seedText: string
+): T[] {
+  let seed = 2166136261;
+
+  for (let index = 0; index < seedText.length; index += 1) {
+    seed ^= seedText.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+
+  let state = seed >>> 0;
+
+  function random() {
+    state += 0x6d2b79f5;
+
+    let value = state;
+
+    value = Math.imul(
+      value ^ (value >>> 15),
+      value | 1
+    );
+
+    value ^=
+      value +
+      Math.imul(
+        value ^ (value >>> 7),
+        value | 61
+      );
+
+    return (
+      ((value ^ (value >>> 14)) >>> 0) /
+      4294967296
+    );
+  }
+
+  const shuffled = [...items];
+
+  for (
+    let index = shuffled.length - 1;
+    index > 0;
+    index -= 1
+  ) {
+    const swapIndex =
+      Math.floor(random() * (index + 1));
+
+    [
+      shuffled[index],
+      shuffled[swapIndex],
+    ] = [
+      shuffled[swapIndex],
+      shuffled[index],
+    ];
+  }
+
+  return shuffled;
+}
+
 function normalizeResponse(
   value: unknown
 ): string[] {
@@ -374,7 +432,10 @@ function CandidateAssessmentExperience() {
         prompt: row.prompt,
         scenario: row.scenario,
         image_url: row.image_url,
-        options: normalizeOptions(row.options),
+        options: stableShuffle(
+          normalizeOptions(row.options),
+          `${newAttemptId}:${row.question_id}`
+        ),
       }));
 
     if (normalizedQuestions.length === 0) {
