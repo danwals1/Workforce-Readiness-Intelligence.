@@ -951,7 +951,7 @@ export default function PracticalVerificationPage() {
             href="/dashboard"
             className="mt-6 inline-block text-sm font-medium text-cyan-400 hover:text-cyan-300"
           >
-            ← Training System Home
+            ← RISE Home
           </Link>
         </div>
       </main>

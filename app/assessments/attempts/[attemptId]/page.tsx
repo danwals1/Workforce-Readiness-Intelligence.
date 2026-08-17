@@ -450,14 +450,14 @@ export default function AssessmentAttemptPage() {
       }
       className="text-sm text-slate-400 transition hover:text-white"
     >
-      Training System Home
+      RISE Home
     </button>
   </div>
 
   <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-sm font-medium text-cyan-400">
-                IntegrateU Training System
+                RISE
               </p>
 
               <h1 className="mt-2 text-2xl font-semibold">

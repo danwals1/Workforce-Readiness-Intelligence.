@@ -1344,7 +1344,7 @@ function formatDateTime(value: string | null) {
             href="/dashboard"
             className="mt-6 inline-block text-cyan-400 hover:text-cyan-300"
           >
-            ← Training System Home
+            ← RISE Home
           </Link>
         </div>
       </main>
@@ -1435,7 +1435,7 @@ return (
                 </p>
 
                 <p className="mt-3 text-sm font-medium text-rose-300">
-                  This action cannot currently be reversed in the Training System.
+                  This action cannot currently be reversed in RISE.
                 </p>
               </div>
 

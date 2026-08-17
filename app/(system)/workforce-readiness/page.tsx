@@ -8,7 +8,6 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import SystemHeader from "@/components/SystemHeader";
 import { supabase } from "@/lib/supabase";
 
 type WorkforceRow = {
@@ -168,11 +167,6 @@ export default function WorkforceReadinessPage() {
 
   const loadPage =
     useCallback(async () => {
-      setLoading(true);
-      setMessage(
-        "Loading workforce readiness..."
-      );
-
       const {
         data: sessionData,
         error: sessionError,
@@ -240,8 +234,19 @@ export default function WorkforceReadinessPage() {
     }, [router]);
 
   useEffect(() => {
-    loadPage();
+    queueMicrotask(() => {
+      void loadPage();
+    });
   }, [loadPage]);
+
+  async function handleRefresh() {
+    setLoading(true);
+    setMessage(
+      "Loading workforce readiness..."
+    );
+
+    await loadPage();
+  }
 
   const filteredRows =
     useMemo(() => {
@@ -562,16 +567,21 @@ export default function WorkforceReadinessPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-[1500px]">
-        <SystemHeader
-          title="Workforce Readiness"
-          subtitle="Company-wide visibility into current role readiness, competency gaps, and active development work."
-          backHref="/dashboard"
-          backLabel="Dashboard"
-          showHome={true}
-          showSignOut={true}
-        />
+    <div className="mx-auto max-w-[1500px]">
+      <header className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Employees
+        </p>
+
+        <h2 className="mt-2 text-3xl font-semibold">
+          Workforce Readiness
+        </h2>
+
+        <p className="mt-2 max-w-3xl text-sm text-slate-400">
+          Company-wide visibility into current role readiness,
+          competency gaps, and active development work.
+        </p>
+      </header>
 
         {message && (
           <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-300">
@@ -1499,7 +1509,7 @@ export default function WorkforceReadinessPage() {
 
               <button
                 type="button"
-                onClick={loadPage}
+                onClick={handleRefresh}
                 className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
               >
                 Refresh Matrix
@@ -1507,8 +1517,7 @@ export default function WorkforceReadinessPage() {
             </div>
           </>
         )}
-      </div>
-    </main>
+    </div>
   );
 }
 

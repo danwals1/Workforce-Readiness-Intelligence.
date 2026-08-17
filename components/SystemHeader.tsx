@@ -37,7 +37,7 @@ export default function SystemHeader({
           href="/dashboard"
           className="text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
         >
-          IntegrateU Training System
+          RISE
         </Link>
 
         <h1 className="mt-2 text-3xl font-semibold">
@@ -66,7 +66,7 @@ export default function SystemHeader({
             href="/dashboard"
             className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
           >
-            Training System Home
+            RISE Home
           </Link>
         )}
 

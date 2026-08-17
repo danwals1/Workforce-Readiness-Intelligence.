@@ -50,11 +50,6 @@ type VerificationAssignment = {
 };
 
 
-type ReadinessActionSummary = {
-  action_key: string;
-  employee_id: string;
-};
-
 
 type DevelopmentPlanLifecycleSummary = {
   development_plan_id: string;
@@ -82,16 +77,8 @@ export default function DashboardPage() {
     VerificationAssignment[]
   >([]);
 
-  const [readinessActions, setReadinessActions] =
-    useState<ReadinessActionSummary[]>([]);
-
   const [developmentPlans, setDevelopmentPlans] =
     useState<DevelopmentPlanLifecycleSummary[]>([]);
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/");
-  }
 
   useEffect(() => {
     async function loadDashboard() {
@@ -159,42 +146,14 @@ export default function DashboardPage() {
       // ----------------------------------------------------------------------
 
       if (integrateAdmin || clientAdmin) {
-        const [
-          readinessActionResult,
-          developmentPlanResult,
-        ] = await Promise.all([
-          supabase.rpc(
-            "wri_list_readiness_actions",
-            {
-              p_client_id: null,
-              p_employee_id: null,
-              p_action_type: null,
-              p_priority: null,
-            }
-          ),
-
-          supabase.rpc(
+        const developmentPlanResult =
+          await supabase.rpc(
             "wri_list_development_plan_resolutions",
             {
               p_employee_id: null,
               p_resolution_status: null,
             }
-          ),
-        ]);
-
-        if (readinessActionResult.error) {
-          console.error(
-            "Unable to load readiness actions:",
-            readinessActionResult.error
           );
-
-          setReadinessActions([]);
-        } else {
-          setReadinessActions(
-            (readinessActionResult.data ?? []) as
-              ReadinessActionSummary[]
-          );
-        }
 
         if (developmentPlanResult.error) {
           console.error(
@@ -210,7 +169,6 @@ export default function DashboardPage() {
           );
         }
       } else {
-        setReadinessActions([]);
         setDevelopmentPlans([]);
       }
 
@@ -502,18 +460,6 @@ export default function DashboardPage() {
     ).length;
 
 
-  const awaitingEvidenceCount =
-    openDevelopmentPlans.filter(
-      (plan) =>
-        plan.resolution_status ===
-          "awaiting_reassessment" ||
-        plan.resolution_status ===
-          "awaiting_verification" ||
-        plan.resolution_status ===
-          "awaiting_reverification"
-    ).length;
-
-
   const employeesWithOpenWork =
     workforceReadiness.filter(
       (row) =>
@@ -522,31 +468,20 @@ export default function DashboardPage() {
     ).length;
 
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-cyan-400">
-              IntegrateU
-            </p>
+    <div>
+        <header className="mb-8">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Overview
+          </p>
 
-            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
-              IntegrateU Training System
-            </h1>
+          <h2 className="mt-2 text-3xl font-semibold">
+            Training & Readiness
+          </h2>
 
-            <p className="mt-3 max-w-2xl text-slate-400">
-              Your central hub for workforce readiness,
-              assessments, development, and practical
-              verification.
-            </p>
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-100 hover:text-slate-900"
-          >
-            Sign Out
-          </button>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            Your central view of workforce readiness, assessments,
+            development activity, and practical verification.
+          </p>
         </header>
 
         {message && (
@@ -732,7 +667,7 @@ export default function DashboardPage() {
 
               <p className="mt-2 text-sm text-slate-400">
                 Manage the configuration and permissions
-                that support the IntegrateU Training System.
+                that support the RISE.
               </p>
             </div>
 
@@ -769,7 +704,7 @@ export default function DashboardPage() {
                   </p>
 
                   <h3 className="mt-2 text-xl font-semibold">
-                    Training System Library
+                    RISE Library
                   </h3>
 
                   <p className="mt-2 text-sm leading-6 text-slate-400">
@@ -1154,8 +1089,7 @@ export default function DashboardPage() {
               </div>
             </section>
           )}
-      </div>
-    </main>
+    </div>
   );
 }
 
